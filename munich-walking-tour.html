@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1a18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Munich Old Town — A Walking Tour</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#14130f;
+    --panel:#1e1c18;
+    --panel-2:#272420;
+    --ink:#f2ede3;
+    --ink-dim:#a9a196;
+    --accent:#d8a13a;      /* Munich yellow-gold */
+    --accent-ink:#241c07;
+    --line:#3a352e;
+    --legend:#7c6ba8;
+    --sheet-peek:132px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior:none;
+  }
+
+  /* ---------- MAP ---------- */
+  #map{position:fixed;inset:0;bottom:0;background:#2a2721;z-index:0}
+  .leaflet-container{background:#2a2721;font-family:inherit}
+  .leaflet-control-attribution{font-size:9px;background:rgba(20,19,15,.7);color:#8d867b}
+  .leaflet-control-attribution a{color:#b3aa9c}
+
+  /* numbered stop pins */
+  .pin{
+    display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:50%;
+    background:var(--panel);color:var(--ink);
+    border:2.5px solid var(--accent);
+    font-weight:700;font-size:14px;line-height:1;
+    box-shadow:0 2px 8px rgba(0,0,0,.55);
+    transition:transform .18s ease, background .18s ease;
+  }
+  .pin.done{opacity:.5}
+  .pin.active{background:var(--accent);color:var(--accent-ink);transform:scale(1.32);border-color:#fff}
+  .pin.optional{border-style:dashed}
+
+  /* my-location dot */
+  .medot{width:16px;height:16px;border-radius:50%;background:#3d8bfd;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 2px 10px rgba(0,0,0,.5)}
+  .mepulse{position:absolute;inset:-9px;border-radius:50%;background:rgba(61,139,253,.28);animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+
+  /* ---------- TOP BAR ---------- */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;z-index:600;
+    padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;
+    display:flex;gap:8px;align-items:center;
+    background:linear-gradient(to bottom,rgba(20,19,15,.93),rgba(20,19,15,.6) 70%,transparent);
+    pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto}
+  .tbtn{
+    background:rgba(30,28,24,.92);border:1px solid var(--line);color:var(--ink);
+    border-radius:11px;padding:9px 12px;font-size:13px;font-weight:600;
+    display:flex;align-items:center;gap:6px;cursor:pointer;backdrop-filter:blur(8px);
+  }
+  .tbtn:active{transform:scale(.96)}
+  .tbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  #title{
+    flex:1;min-width:0;font-size:13px;font-weight:700;letter-spacing:.02em;
+    color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding-left:2px;
+  }
+  #title b{color:var(--accent)}
+
+  /* ---------- BOTTOM SHEET ---------- */
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:700;
+    height:86vh;max-height:86vh;
+    background:var(--panel);
+    border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+    transform:translateY(calc(100% - var(--sheet-peek)));
+    transition:transform .34s cubic-bezier(.32,.72,0,1);
+    display:flex;flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  #sheet.open{transform:translateY(0)}
+  #sheet.hidden{transform:translateY(100%)}
+  #grab{padding:9px 0 4px;display:flex;justify-content:center;cursor:grab;flex:0 0 auto}
+  #grab i{display:block;width:42px;height:4px;border-radius:2px;background:#4b453c}
+
+  #sheethead{flex:0 0 auto;padding:2px 18px 10px;cursor:pointer}
+  #sheetnum{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:24px;height:24px;padding:0 6px;border-radius:7px;
+    background:var(--accent);color:var(--accent-ink);
+    font-size:12px;font-weight:800;margin-right:9px;vertical-align:3px;
+  }
+  #sheettitle{display:inline;font-size:20px;font-weight:750;letter-spacing:-.01em}
+  #sheetsub{margin-top:5px;font-size:12.5px;color:var(--ink-dim);font-weight:500}
+  #sheetsub .sep{opacity:.4;margin:0 6px}
+
+  #controls{
+    flex:0 0 auto;display:flex;gap:7px;padding:0 18px 12px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+  }
+  .cbtn{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+  }
+  .cbtn:active{transform:scale(.96)}
+  .cbtn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .cbtn:disabled{opacity:.4;cursor:default}
+  .cbtn.ghost{background:transparent}
+
+  #body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px 34px}
+  #body p{margin:0 0 12px}
+  #body h4{
+    margin:20px 0 8px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--accent);font-weight:800;
+  }
+  #body ul{margin:0 0 12px;padding-left:19px}
+  #body li{margin-bottom:7px}
+  #body em{color:var(--ink-dim);font-style:italic}
+  #body strong{color:#fff;font-weight:680}
+  .box{
+    border-radius:12px;padding:11px 13px;margin:0 0 14px;font-size:14.5px;line-height:1.5;
+    background:var(--panel-2);border-left:3px solid var(--line);
+  }
+  .box .lbl{
+    display:block;font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+    font-weight:800;margin-bottom:5px;
+  }
+  .box.legend{border-left-color:var(--legend);background:#242034}
+  .box.legend .lbl{color:#b6a6e0}
+  .box.heads{border-left-color:#c9683f;background:#2c221c}
+  .box.heads .lbl{color:#e39268}
+  .box.walk{border-left-color:#5b9a6b;background:#1e2721}
+  .box.walk .lbl{color:#8fcba0}
+  #body .srcs{font-size:11.5px;color:#7d766b;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  #body .srcs a{color:#9a9184}
+
+  /* ---------- STOP LIST ---------- */
+  #list{
+    position:fixed;inset:0;z-index:800;background:var(--bg);
+    display:none;flex-direction:column;
+    padding-top:env(safe-area-inset-top);
+  }
+  #list.show{display:flex}
+  #listhead{
+    padding:14px 18px 12px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;flex:0 0 auto;
+  }
+  #listhead h2{margin:0;font-size:17px;font-weight:750;flex:1}
+  #listhead p{margin:3px 0 0;font-size:12px;color:var(--ink-dim);font-weight:500}
+  #listitems{flex:1 1 auto;overflow-y:auto;padding:6px 0 40px}
+  .li{
+    display:flex;gap:13px;align-items:flex-start;padding:13px 18px;
+    border-bottom:1px solid #262320;cursor:pointer;
+  }
+  .li:active{background:var(--panel-2)}
+  .li .n{
+    flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    border:2px solid var(--accent);font-size:12px;font-weight:800;margin-top:1px;
+  }
+  .li.done .n{background:var(--accent);color:var(--accent-ink)}
+  .li.opt .n{border-style:dashed;border-color:var(--ink-dim);color:var(--ink-dim)}
+  .li .t{flex:1;min-width:0}
+  .li .t b{display:block;font-size:15px;font-weight:650}
+  .li .t span{display:block;font-size:12px;color:var(--ink-dim);margin-top:2px}
+
+  /* ---------- INTRO / HELP OVERLAY ---------- */
+  #intro{
+    position:fixed;inset:0;z-index:900;background:rgba(12,11,9,.96);
+    display:flex;align-items:center;justify-content:center;padding:22px;
+    overflow-y:auto;
+  }
+  #intro.hide{display:none}
+  .card{
+    max-width:520px;width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:18px;padding:24px 22px;
+  }
+  .card h1{margin:0 0 4px;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+  .card .kicker{color:var(--accent);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;margin-bottom:9px}
+  .card p{margin:0 0 12px;font-size:14.5px;color:#ded7cb}
+  .card ul{margin:0 0 14px;padding-left:19px;font-size:14px;color:#ded7cb}
+  .card li{margin-bottom:6px}
+  .card .go{
+    width:100%;background:var(--accent);color:var(--accent-ink);border:0;
+    border-radius:12px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;margin-top:4px;
+  }
+  .card .go:active{transform:scale(.98)}
+  .stat{display:flex;gap:18px;margin:0 0 16px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .stat div{flex:1}
+  .stat b{display:block;font-size:19px;font-weight:800;color:var(--accent)}
+  .stat span{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+
+  #toast{
+    position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 62px);transform:translateX(-50%);
+    z-index:850;background:rgba(40,37,32,.97);border:1px solid var(--line);
+    color:var(--ink);border-radius:11px;padding:10px 15px;font-size:13px;font-weight:600;
+    max-width:88vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;
+    backdrop-filter:blur(8px);
+  }
+  #toast.show{opacity:1}
+
+  @media (min-width:820px){
+    #sheet{left:auto;right:14px;bottom:14px;top:74px;width:430px;height:auto;max-height:none;border-radius:16px;border:1px solid var(--line);transform:none}
+    #sheet.hidden{transform:translateX(120%)}
+    :root{--sheet-peek:0px}
+    #grab{display:none}
+    #sheethead{padding-top:16px;cursor:default}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <button class="tbtn" id="btnList">☰ Stops</button>
+  <div id="title"><b>Munich</b> Old Town</div>
+  <button class="tbtn" id="btnLocate">◎ Locate</button>
+</div>
+
+<div id="sheet">
+  <div id="grab"><i></i></div>
+  <div id="sheethead">
+    <span id="sheetnum">1</span><h3 id="sheettitle">Karlstor</h3>
+    <div id="sheetsub"></div>
+  </div>
+  <div id="controls">
+    <button class="cbtn primary" id="btnSpeak">▶ Listen</button>
+    <button class="cbtn ghost" id="btnPrev">← Prev</button>
+    <button class="cbtn ghost" id="btnNext">Next →</button>
+    <button class="cbtn ghost" id="btnDone">✓ Visited</button>
+  </div>
+  <div id="body"></div>
+</div>
+
+<div id="list">
+  <div id="listhead">
+    <div style="flex:1">
+      <h2>The route</h2>
+      <p id="listmeta"></p>
+    </div>
+    <button class="tbtn" id="btnCloseList">✕</button>
+  </div>
+  <div id="listitems"></div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <div class="kicker">A self-guided walk</div>
+    <h1>Munich Old Town</h1>
+    <p>From a medieval city gate to the square where the Nazi movement was stopped by police gunfire — eight centuries of Munich in one flat, compact loop through the Altstadt.</p>
+    <div class="stat">
+      <div><b id="sN">–</b><span>Stops</span></div>
+      <div><b id="sKm">–</b><span>Kilometres</span></div>
+      <div><b>1½–2</b><span>Hours</span></div>
+    </div>
+    <ul>
+      <li><b>Tap a numbered pin</b> or use ☰ Stops to read about it.</li>
+      <li><b>◎ Locate</b> puts a blue dot on the map and follows you.</li>
+      <li><b>▶ Listen</b> reads the text aloud using your phone's voice.</li>
+      <li>Drag the panel down to see more map, up to read more.</li>
+    </ul>
+    <p style="font-size:13px;color:#a9a196"><b>Time it for the Glockenspiel</b> at Marienplatz: 11:00 and 12:00 daily, plus 17:00 from March to October.</p>
+    <button class="go" id="btnStart">Start the walk</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   STOP DATA  —  injected below
+   ============================================================ */
+const STOPS = [
+
+/* ---------- 1 ---------- */
+{
+  name:"Karlstor & Stachus",
+  era:"Medieval gate, c. 1302",
+  walk:"Start here",
+  lat:48.1390, lon:11.5668,
+  walk_note:"Arrive at <b>Karlsplatz (Stachus)</b> — S-Bahn, U-Bahn and trams all stop here. Stand in front of the two round brick towers with the big arch between them. That arch is your doorway into the old city.",
+  blocks:[
+    { p:[
+      "Munich exists because a duke committed an act of infrastructure sabotage. In the 1150s the enormously lucrative salt trade from Reichenhall to Augsburg crossed the river Isar at a bridge belonging to the Bishop of Freising, who collected the tolls. <b>Henry the Lion</b>, Duke of Saxony and Bavaria, burned that bridge down, built his own a few kilometres upstream, and rerouted the salt road through a small settlement beside a monastic community — <i>apud Munichen</i>, \"at the monks'\".",
+      "The bishop complained to the Emperor. On <b>14 June 1158</b> at Augsburg, Frederick Barbarossa arbitrated: the bridge stayed where Henry had put it, Munich got market, mint and toll rights, and the bishop got a cut. That document is Munich's birth certificate, and the toll road it legalised is the street you are about to walk down.",
+      "Everything on this walk sits inside a ring of walls that has since vanished. The first wall, from around 1158–1174, enclosed just <b>17 hectares</b> — a circuit of roughly 1.5 km, brick, about 5 m high, with no foundations and a wet moat outside. A second, much larger fortification went up between <b>1285 and 1337</b> under Ludwig the Bavarian. This gate belongs to that second ring."
+    ]},
+    { h:"The gate", p:[
+      "It was originally the <b>Neuhauser Tor</b>, first documented in 1301 or 1302 depending on which official source you trust, and one of the city's two most important toll gates. Munich once had many gates; only three survive — this one, the Isartor and the Sendlinger Tor.",
+      "The tall central tower that once stood between these two round ones is gone, and not because of a war. Late on the evening of <b>15 September 1857</b>, a gunpowder store in an ironmonger's premises against the north side of the tower exploded. The damage was so severe the tower was demolished outright. The gate was rebuilt in Gothic style in 1861–62, then reworked again in 1899–1902 by Gabriel von Seidl together with the curved neo-Baroque <b>Rondell</b> buildings that frame the square."
+    ]},
+    { h:"Why nobody calls it Karlsplatz", p:[
+      "The square was officially renamed <b>Karlsplatz</b> in 1797 after Elector Karl Theodor, who had ordered the demolition of the old bastion here. He was thoroughly disliked in Munich, not least for his habit of naming things after himself, and Münchners simply refused to use the name. They called it <b>Stachus</b> instead, after a tavern that stood nearby. Two and a quarter centuries later, they still do. The official name is on the street signs; the real name is on everyone's lips."
+    ]},
+    { h:"Underneath your feet", p:[
+      "The Stachus underground complex — S-Bahn, U-Bahn and shopping arcades — opened on <b>26 November 1970</b> after a four-year build. It runs 350 m long, 150 m wide and about 40 m deep, and is regularly cited as one of Europe's largest underground structures of its kind."
+    ]}
+  ],
+  look:[
+    "The <b>join line</b> where the 19th-century rebuilding meets the medieval brickwork on the two towers.",
+    "The <b>fountain</b> (1972, ~200 nozzles) — Munich's default meeting point and, in summer, a paddling pool for anyone under about eight.",
+    "At the Karlstor: three <b>musician figures</b> salvaged from the original Fischbrunnen, which you'll meet later on Marienplatz. They survived the war; their companions did not.",
+    "West across Sonnenstraße, the glass-domed neo-Baroque <b>Justizpalast</b> (Friedrich von Thiersch, 1890–97) — where the White Rose resistance members were tried and condemned in 1943."
+  ],
+  sources:[
+    {t:"muenchen.de – Stachus", url:"https://www.muenchen.de/en/sights/squares/stachus"},
+    {t:"muenchen.de – Karlstor", url:"https://www.muenchen.de/en/sights/karlstor-stachus"},
+    {t:"City of Munich: the fortified city (PDF)", url:"https://stadt.muenchen.de/dam/jcr:5194f3d8-26b5-46cf-965c-293212ba64f7/booklet_befestigte_stadt.pdf"}
+  ]
+},
+
+/* ---------- 2 ---------- */
+{
+  name:"Bürgersaalkirche",
+  era:"Baroque, 1709",
+  walk:"170 m · 2 min",
+  lat:48.13889, lon:11.56833,
+  walk_note:"Walk through the Karlstor arch and continue east along <b>Neuhauser Straße</b>. The church is at no. 14, on your left. Its entrance is easy to miss — it looks like a doorway between shops.",
+  blocks:[
+    { p:[
+      "You are now on the busiest shopping street in Germany. Kaufingerstraße and Neuhauser Straße together carry roughly <b>13,500–14,500 pedestrians an hour</b>, and up to 200,000 people a day on peak Advent days. It also holds Germany's most expensive retail rents — about <b>€3,840 per square metre per year</b> in 2025, ahead of the far more glamorous Maximilianstraße. This is the old salt road, monetised.",
+      "The Bürgersaalkirche was built in <b>1709–10</b> by Giovanni Antonio Viscardi, not as a parish church but as a prayer and meeting hall for a lay Marian congregation of Munich citizens. It has two levels: a Baroque upper church and a lower church. Hold that detail — the lower church is why people come."
+    ]},
+    { h:"The priest who would not stop talking", p:[
+      "<b>Father Rupert Mayer</b> (1876–1945) was a Jesuit, a decorated First World War chaplain who lost a leg at the front, and from the 1920s onward one of the most stubbornly public opponents of National Socialism in Munich. He preached against it from the pulpit of St Michael, which you'll see in a few minutes. He was arrested there in June 1937, imprisoned, then confined to a monastery in Ettal and forbidden to speak in public.",
+      "He was freed in 1945, resumed preaching immediately, and collapsed mid-sermon on <b>1 November 1945</b> — All Saints' Day — dying of a stroke. He was beatified in 1987. His grave is the plain red marble slab in front of the lower-church altar, and it is genuinely a place of local devotion rather than a tourist stop; you will usually find fresh flowers and people praying.",
+      "A small museum devoted to him opened here in <b>2008</b>, Munich's first ecclesiastical museum — it holds his First World War Red Cross armband and his typewriter."
+    ]},
+    { h:"What you're actually looking at", p:[
+      "Almost none of the interior is original. On the night of <b>24–25 April 1944</b> an RAF raid using high-explosive, incendiary and phosphorus bombs destroyed the upper floor down to its outer walls, along with the roof, the frescoed stucco vault, the gallery and most of the furnishings. The walls were shored up and the hall provisionally re-roofed so services could resume; restoration was finished by 1959, with a full colour restoration in 1970–71."
+    ]}
+  ],
+  look:[
+    "Ignaz Günther's <b>Guardian Angel with Child</b> (1763) — one of the finest pieces of Bavarian Rococo sculpture in the city, and it survived.",
+    "A <b>1710 relief by Andreas Faistenberger</b>, salvaged from the high altar that was destroyed in the raid.",
+    "The two-storey division expressed on the façade, with an enthroned Madonna and Child above the entrance."
+  ],
+  practical:"Open Mon–Sat 10:00–17:00, Sun 09:00–17:00. Free.",
+  sources:[
+    {t:"muenchen.de – Bürgersaalkirche", url:"https://www.muenchen.de/en/sights/burgersaalkirche-historical-church-museum-pedestrian-zone"},
+    {t:"St Michael – Rupert Mayer", url:"https://www.st-michael-muenchen.de/en/besuch-mitmachen/bauwerk-st-michael/rupert-mayer"}
+  ]
+},
+
+/* ---------- 3 ---------- */
+{
+  name:"St Michael's Church",
+  era:"Renaissance, 1583–1597",
+  walk:"170 m · 2 min",
+  lat:48.13889, lon:11.57056,
+  walk_note:"Continue east. St Michael is at Neuhauser Straße 6, on the same side. You will know it by the flat gabled front with tiers of statues and a bronze archangel between the doors — <b>no towers at all</b>.",
+  blocks:[
+    { p:[
+      "This building is an argument, cast in stone. Built <b>1583–1597</b> for <b>Duke Wilhelm V</b> as the church of the Jesuit college, it was Munich's declaration that Bavaria would be the immovable Catholic bulwark of the Counter-Reformation. It is the largest Renaissance church north of the Alps, and it was consciously modelled on <b>Il Gesù</b> in Rome — the Jesuit mother church. The message to Protestant Germany was not subtle.",
+      "Its barrel vault spans just over <b>20 m</b> unsupported, and was for a long time regarded as the widest free-spanning vault built anywhere after St Peter's in Rome. It set the template for southern German church architecture for roughly two centuries."
+    ]},
+    { h:"The tower that fell down, and the man who took it as encouragement", p:[
+      "In <b>1590</b>, with the first phase nearly finished, the completed tower collapsed and destroyed the brand-new choir. Any reasonable patron would have read that as a warning. Wilhelm V read it as a sign from God that the church was <b>not big enough</b>. He hired Friedrich Sustris, who added a larger choir, a transept and the monumental façade you are standing in front of. The tower was never rebuilt — which is why this enormous church has no towers, and why its silhouette is so easy to distinguish from the cathedral."
+    ]},
+    { h:"The crypt", p:[
+      "Below the church lie some 40 members of the Wittelsbach family, but one tomb draws everybody: <b>Ludwig II</b>, the \"fairytale king\", builder of Neuschwanstein, patron of Wagner, declared insane and deposed in June 1886 and found dead in Lake Starnberg the next day, aged 40, alongside his psychiatrist. The death has never been satisfactorily explained and Bavaria has been arguing about it ever since. His tomb is usually the one with flowers on it, left by people who were not born within a century of his death."
+    ]},
+    { h:"Rupert Mayer again", p:[
+      "This is where Father Mayer, whose grave you just saw, actually did his preaching. In 1935 he stood outside this main entrance with a collection box in protest at the ban on Caritas collections. He was <b>arrested here on 5 June 1937</b>."
+    ]}
+  ],
+  look:[
+    "The bronze <b>Archangel Michael</b> defeating Lucifer between the main doors — the demon's face is worth a close look.",
+    "The tiers of <b>Wittelsbach rulers</b> on the façade, arranged as a dynastic family tree ascending to Christ. Propaganda by genealogy.",
+    "The sheer flatness of the barrel vault once you're inside, and the white-on-white restraint of it — very different from the Baroque churches later on this walk.",
+    "In November 1944 that vault <b>collapsed</b> under bombing. What you see was restored in 1946–48."
+  ],
+  practical:"Church: Mon & Fri 09:30–19:00, Tue–Thu & Sat 07:30–19:00, Sun 07:30–22:00. Crypt €3 (reduced €2, ages 11–17 €1, under 10 free), open Mon–Sat but <b>closed Sundays and public holidays</b>. A €5 combination ticket covers the Theatinerkirche crypt too — worth buying if you plan to finish this walk.",
+  sources:[
+    {t:"muenchen.de – St Michael", url:"https://www.muenchen.de/en/sights/churches/jesuit-church-st-michael-germanys-first-renaissance-church"},
+    {t:"st-michael-muenchen.de", url:"https://www.st-michael-muenchen.de/en/besuch-mitmachen/bauwerk-st-michael/rupert-mayer"}
+  ]
+},
+
+/* ---------- 4 ---------- */
+{
+  name:"Frauenkirche",
+  era:"Late Gothic, 1468–1488",
+  walk:"400 m · 5 min",
+  lat:48.13861, lon:11.57389,
+  walk_note:"Carry on east; Neuhauser Straße becomes <b>Kaufingerstraße</b> at the Augustinerstraße junction — the spot where a gate tower called the Schöner Turm stood until 1807. Turn left up any of the small lanes to <b>Frauenplatz</b>. The two brick towers are visible from most of the street.",
+  blocks:[
+    { p:[
+      "Munich's cathedral, and the shape on every postcard. Built <b>1468–1488</b> by Jörg von Halspach in brick — not for aesthetics but because there was no stone quarry nearby and brick was cheaper. The towers went up in just twenty years. The money ran out in 1479 and <b>Pope Sixtus IV granted an indulgence</b> to raise the rest, which is a very fifteenth-century way to finance a building.",
+      "Inside, the nave is <b>109 m long, 40 m wide and 37 m high</b>, enclosing around 200,000 cubic metres. Original standing capacity was about <b>20,000</b> — which is remarkable, because Munich at the time had roughly 13,000 inhabitants. They built for a city that did not exist yet."
+    ]},
+    { h:"The domes were a leak repair", p:[
+      "Everyone assumes the copper onion domes are a deliberate Bavarian flourish, or an homage to Jerusalem. They are neither. Tall openwork Gothic spires were planned and never built, for lack of money — a 1493 engraving still shows the towers unfinished. Rainwater kept getting into the temporary roofing, so in <b>1524–25</b> the cheaper option was chosen: cap them with domes. The Jerusalem story traces back to a <i>mislabelled</i> 15th-century engraving of the Dome of the Rock. The most recognisable silhouette in Munich is a budget decision about a leaky roof.",
+      "And the twin towers are not, as guides love to say, a metre apart in height. They are <b>98.57 m and 98.45 m</b> — a difference of <b>12 centimetres</b>."
+    ]},
+    { h:"Why nothing in Munich is taller", p:[
+      "In a <b>November 2004 referendum</b> the city voted to cap new buildings in the centre at roughly the height of these towers, about 99–100 m. It is why Munich's skyline still looks like Munich's skyline. (The figure 109 m, often quoted as the limit, is the length of the nave, not a height.)"
+    ]},
+    { h:"An emperor and an empty tomb", p:[
+      "The huge black marble monument near the entrance commemorates <b>Louis IV, \"Ludwig the Bavarian\"</b> — Duke of Bavaria who became Holy Roman Emperor, the high-water mark of medieval Wittelsbach ambition, excommunicated by the Pope and unbothered by it. The monument is a <b>cenotaph</b>: a memorial, not a grave.",
+      "Late in the war the roof collapsed and one tower was badly damaged, though both stayed standing. Most of the irreplaceable interior was lost — the most important pieces and the historic windows had been evacuated in time. Rebuilding began almost immediately after 1945 and the final major restoration ran 1989–1994. When you look at the interior, you are looking at a survivor rather than an original."
+    ],
+      legend:"<b>The Devil's Footstep.</b> Just inside the entrance is a dark mark in the floor said to be the footprint of the Devil, who came to inspect the finished church and — standing on this exact spot, the one place where the pillars line up perfectly — saw a windowless hall, laughed at the architect's incompetence, then stamped in rage on realising he'd been tricked. It is a wonderful story and it is a story. Stand on the mark anyway: the optical trick with the pillars is real and rather good."
+    }
+  ],
+  look:[
+    "The mark in the floor by the entrance (see above) — and then take two steps sideways and watch the windows reappear.",
+    "How <b>plain the brick exterior</b> is compared with the churches on either side of it in time. No stone tracery, no statues, just mass.",
+    "The <b>south tower climb</b>: reopened March 2022 after ten years shut. 86 spiral steps, then a small lift taking four people at a time. Alps visible on a clear day.",
+    "Standing on Frauenplatz, note you cannot see the towers well — the square is too tight. The building was designed to be seen from outside the walls."
+  ],
+  practical:"Church free. Tower: Mon–Sat 10:00–17:00, Sun/holidays 11:30–17:00, last ascent 16:30. €7.50, reduced €5.50, under 7 free. The north tower is not open — until 2018 it held disused intelligence-service relay equipment.",
+  sources:[
+    {t:"muenchen.de – Frauenkirche", url:"https://www.muenchen.de/en/sights/cathedral-church-our-lady-all-about-frauenkirche-munich"},
+    {t:"Wikipedia – Frauenkirche, Munich", url:"https://en.wikipedia.org/wiki/Frauenkirche,_Munich"}
+  ]
+},
+
+/* ---------- 5 ---------- */
+{
+  name:"Marienhof",
+  era:"An empty hectare",
+  walk:"180 m · 2 min",
+  optional:true,
+  lat:48.13861, lon:11.57639,
+  walk_note:"Optional 2-minute detour. From Frauenplatz head east along Schrammerstraße, or approach from <b>Dienerstraße</b> behind the New Town Hall. In 2026 you cannot walk on it — look at it over the hoardings.",
+  blocks:[
+    { p:[
+      "A hectare of prime land in the exact centre of one of Europe's most expensive cities, and for most of the last eighty years it has been empty. That is the interesting thing about it.",
+      "The block was built up until the war flattened it. From 1948 to 1971 it was a car park. Architect Adolf Abel proposed a car-free city-centre scheme with Marienhof as a pedestrian hub; it was never built. Underground garage proposals rumbled on into the 1980s. A playground, a city library, a beer garden, a kindergarten, a children's gallery, a tourist information centre — all floated, all rejected. Munich spent <b>sixty-five years</b> unable to decide what to do with its own middle."
+    ],
+      heads:"<b>It is a construction pit, not a lawn.</b> Since the groundbreaking on <b>5 April 2017</b> most of Marienhof has been fenced off and excavated for the new Marienhof station on the <i>2. Stammstrecke</i>, Munich's second S-Bahn trunk line. The city's own site says plainly that it is not accessible. The project's trajectory is worth knowing: originally due 2026 at about €3.65bn, then 2035 at €7bn, then up to €9.5bn, and most recent forecasts exceed <b>€11 billion</b>. If you want a single image of large German infrastructure projects in the 2020s, you are looking at it."
+    },
+    { legend:"You will read online that Marienhof was left empty because it was a medieval Jewish quarter, or a plague burial ground. Neither is documented. Don't repeat it." }
+  ],
+  look:[
+    "The <b>back of the New Town Hall</b>, which is far plainer than the Marienplatz façade — this side was never meant to be admired.",
+    "The scale of the excavation, if any of it is visible over the hoardings. The station box goes deep under the old town."
+  ],
+  sources:[
+    {t:"muenchen.de – Marienhof", url:"https://www.muenchen.de/en/sights/marienhof-en"}
+  ]
+},
+/* ---------- 6 ---------- */
+{
+  name:"New Town Hall & Glockenspiel",
+  era:"Neo-Gothic, 1867–1905",
+  walk:"200 m · 3 min",
+  lat:48.13750, lon:11.57556,
+  walk_note:"Come down <b>Dienerstraße</b> or Weinstraße into <b>Marienplatz</b>. Stand well back, near the centre of the square, and look north at the huge spiky façade.",
+  blocks:[
+    { p:[
+      "Marienplatz has been the centre of Munich since 1158 — the market granted in the Augsburg arbitration was held here, at the crossing of the salt road you have just walked and the north–south route to Italy. For most of its life it was called <b>Schrannenplatz</b>, after the grain market that filled it.",
+      "The New Town Hall is a magnificent fake, and knowingly so. It is <b>neo-Gothic, not Gothic</b>, built in three phases from 1867 to 1905, and explicitly modelled on the Flemish town halls of Brussels and Vienna. Munich in the 19th century wanted the civic gravitas of a medieval Netherlandish trading city and simply commissioned one.",
+      "The architect, <b>Georg von Hauberrisser</b>, was <b>25 years old</b> when he won the competition, and supervised the building for roughly forty years. The original budget was 550,000 guilders; the final cost was over 2.7 million marks — an overrun of more than tenfold. Some things about municipal construction do not change."
+    ]},
+    { h:"The numbers", p:[
+      "The Marienplatz façade is <b>98.5 m</b> long, the tower <b>85 m</b> high (beware sources that say 100 m — they are confusing height with façade length). Around <b>400 rooms</b>, 9,159 m² of floor space, six inner courtyards. This is still a working town hall: the Lord Mayor's offices are behind those windows."
+    ]},
+    { h:"The Glockenspiel", p:[
+      "Installed in 1908 and in full public operation from <b>18 February 1909</b>. <b>43 bells</b> and <b>32 figures</b>, the largest bell weighing 1.3 tonnes, the whole thing now solar-powered. It runs on six music cylinders that rotate through the year, so the tune depends on the month.",
+      "<b>Upper tier:</b> the wedding of <b>Duke Wilhelm V and Renate of Lorraine in February 1568</b> — the same Wilhelm V who built St Michael and founded the Hofbräuhaus. The jousting tournament was held right here on this square, and in the re-enactment the Bavarian knight unseats the knight from Lorraine. Home advantage.",
+      "<b>Lower tier:</b> the <b>Schäfflertanz</b>, the coopers' dance, commemorating the plague of <b>1515–1517</b>. The barrel-makers were said to be the first to dance in the streets afterwards, to coax terrified citizens back into public life. The real dance is performed only once every seven years — the next season is <b>2033</b>."
+    ]},
+    { h:"An uglier story", p:[
+      "Of the 154,000 Goldmark the bells cost, 32,000 was donated in 1904 by a furniture dealer named <b>Karl Rosipal</b>. In 1933–34, nine years after his death, the Nazi-era city administration <b>refunded the donation to his family</b> — because he had been of Jewish origin, and Jewish contribution to a monument of Munich civic pride had become intolerable. It is a very small act of bureaucratic viciousness, and a good measure of how thoroughly the machinery worked."
+    ]}
+  ],
+  look:[
+    "The <b>Münchner Kindl</b> — the little monk in the hood — on the very top of the tower. The city's heraldic symbol, a pun on the name (<i>Mönch</i>, monk). It was sculpted by Anton Schmid using his <b>nine-year-old son Ludwig</b> as the model; the boy grew up to be the actor Ludwig Schmid-Wildy.",
+    "An <b>entire extra storey</b> was added after the war, hidden behind the neo-Gothic balustrade. From the square you cannot see it at all.",
+    "Nearly all the roofs burned out in the war and five ruler statues on the façade were destroyed. The carillon rang again on <b>14 September 1945</b> — restored at the express request of the American military government, which understood the value of a city hearing its own bells."
+  ],
+  practical:"Glockenspiel: <b>11:00 and 12:00 daily</b>, plus <b>17:00 from March to October</b>; a short night sequence at 21:00. Silent all day on Good Friday. The 12:00 and 17:00 shows only date from the 1972 Olympics — originally there was just one, at 11:00. Tower viewing platform daily 10:00–20:00 (last ascent 19:40), from €7, two lifts and no stairs.",
+  sources:[
+    {t:"muenchen.de – New Town Hall", url:"https://www.muenchen.de/en/sights/attractions/new-town-hall"},
+    {t:"muenchen.de – Glockenspiel", url:"https://www.muenchen.de/en/sights/munich-glockenspiel"}
+  ]
+},
+
+/* ---------- 7 ---------- */
+{
+  name:"Mariensäule",
+  era:"1638 — a plague and war memorial",
+  walk:"30 m",
+  lat:48.137225, lon:11.575508,
+  walk_note:"The gilded column in the middle of the square. Walk right up to the base.",
+  blocks:[
+    { p:[
+      "This column is why the square is no longer called Schrannenplatz. It is also the single most loaded object on Marienplatz, and almost nobody looks at it properly.",
+      "The <b>Thirty Years' War</b> reached Munich in <b>1632</b>, when the Swedish army under Gustavus Adolphus occupied the city. Munich escaped destruction — partly by paying an enormous ransom, partly, as the Hofbräuhaus likes to point out, by handing over 23,000 litres of beer. Then in <b>1634</b> came plague. <b>Elector Maximilian I</b> had vowed to erect a \"godly memorial\" if the city and Landshut were spared the worst. The column, of Adneter marble, went up in <b>1638</b> and was consecrated on <b>7 November</b> that year.",
+      "So: this is not decoration. It is a survivor's thank-you note, and Bavaria's public commitment to the Counter-Reformation, planted in the middle of the market."
+    ]},
+    { h:"The four small figures are the point", p:[
+      "At the corners of the base, four <b>putti</b> — chubby cherubs — are each killing a beast. They are not being cute. Each beast is a plague of the age, taken from Psalm 91:",
+      "<b>Lion = War.</b> <b>Basilisk = Plague.</b> <b>Dragon = Hunger.</b> <b>Serpent = Heresy.</b>",
+      "Read in order, that is a fairly precise summary of what Munich had just been through — with the interesting detail that Protestantism is listed alongside the plague."
+    ]},
+    { h:"The zero point", p:[
+      "Every road sign in Germany that gives a distance to <b>München</b> is measuring to this column. It is the official <i>metrischer Nullpunkt</i> — the point from which distances to Munich are calculated. You are standing on kilometre zero."
+    ]},
+    { h:"The Madonna herself", p:[
+      "Gilded bronze, probably by <b>Hubert Gerhard around 1593</b> — both the city and the German sources hedge the attribution. She had two previous jobs: she was originally made for the tomb monument of Duke Wilhelm V, then stood on the high altar of the Frauenkirche until 1613, before being lifted up here.",
+      "During the war the statue was taken down and stored inside the Frauenkirche; it was back up <b>in 1945</b>, remarkably fast. It came down again in <b>1966</b> for U-Bahn and S-Bahn construction, and when it went back up in November 1970 the Baroque base and shaft had been <b>replaced by copies</b>. The putti originals were swapped for copies at the end of the century and are now in the city museum."
+    ]}
+  ],
+  look:[
+    "The two <b>papal visit inscriptions</b> cut into the marble base — John Paul II on 19 November 1980, Benedict XVI on 9 September 2006. Benedict was Archbishop of Munich before he was Pope.",
+    "Which beast is which. The basilisk (plague) is the strange cockerel-serpent hybrid.",
+    "The fact that the Madonna is standing on a <b>crescent moon</b> — standard Marian iconography, and in the 17th century also readable as Christendom over the Ottomans."
+  ],
+  sources:[
+    {t:"muenchen.de – Mariensäule", url:"https://www.muenchen.de/sehenswuerdigkeiten/bauwerke-und-denkmaeler/mariensaeule"},
+    {t:"de.wikipedia – Mariensäule (München)", url:"https://de.wikipedia.org/wiki/Mariens%C3%A4ule_(M%C3%BCnchen)"}
+  ]
+},
+
+/* ---------- 8 ---------- */
+{
+  name:"Fischbrunnen",
+  era:"Fountain since 1318",
+  walk:"50 m",
+  lat:48.1372, lon:11.5762,
+  walk_note:"A few steps east of the column, in front of the corner of the New Town Hall.",
+  blocks:[
+    { p:[
+      "A fountain has stood on this spot since at least <b>1318</b>. This one is the third or fourth act. Konrad Knoll's version was built 1862–65 and unveiled in September 1866: dolphins and lion heads spouting water, four butchers' boys with buckets, four boys playing music above, and a senior journeyman on top holding up a cup.",
+      "It was <b>almost completely destroyed in 1944</b>. Josef Henselmann rebuilt it in 1954 in the form you see, reusing <b>three surviving butcher figures</b> from Knoll's original. Three of Knoll's surviving <i>musician</i> figures were not reused here — they are the ones you passed back at the Karlstor. The fountain is quietly split across the city."
+    ]},
+    { h:"Washing your wallet", p:[
+      "On <b>Ash Wednesday</b>, the Lord Mayor of Munich comes down here and ritually washes his empty purse in the fountain — the <b>Geldbeutelwaschen</b>. The idea, which goes back to the 15th century, is that a purse rinsed here will refill itself for the rest of the year. It is performed with total municipal seriousness after the excesses of Carnival, and it is one of those traditions that tells you a lot about a city's sense of humour about its own money.",
+      "The fountain was also the site of the <b>Metzgersprung</b>, in which butchers' apprentices in sheepskins were thrown into the basin as part of their initiation."
+    ],
+      heads:"<b>The fountain is off in 2026.</b> It was switched off and boarded with wooden panelling from <b>1 July 2026</b>, one of ten ornamental fountains shut down over strain on the water supply, with a retrofit of its control systems planned for August 2026 and no firm restart date. You may be looking at a plywood box. The story is still worth hearing on the spot."
+    }
+  ],
+  look:[
+    "If it is uncovered: the three <b>original 1860s butcher figures</b> among the 1950s work — they have a softer, more detailed carving.",
+    "The crowning bronze fish, by Henselmann's pupil Otto Kallenbach.",
+    "A low <b>drinking point for dogs</b>, added in the 1991 restoration. Very Munich."
+  ],
+  sources:[
+    {t:"muenchen.de – Fischbrunnen", url:"https://www.muenchen.de/en/sights/fischbrunnen"}
+  ]
+},
+
+/* ---------- 9 ---------- */
+{
+  name:"Old Town Hall",
+  era:"Late Gothic, from 1470s",
+  walk:"120 m · 2 min",
+  lat:48.136878, lon:11.577157,
+  walk_note:"The building closing the <b>east</b> end of Marienplatz, with a pedestrian archway cut through its ground floor and a slim white tower.",
+  blocks:[
+    { p:[
+      "Most visitors glance at this and assume it is the newer of the two town halls, because it is so much plainer. It is the older by four centuries. The plain west front is late-Gothic restraint, not modesty about age.",
+      "Its glory is inside: the <b>Tanzsaal</b>, a late-Gothic barrel-vaulted dance hall, still used for honorary-citizenship and award ceremonies. It was decorated with <b>Erasmus Grasser's Moriskentänzer</b> — Morris dancers, originally sixteen carved and painted figures of extraordinary liveliness, made around 1480. <b>Ten survive.</b> The originals were taken out and stored in 1931 and are held by the city museum; what hangs in the hall are copies. What happened to the other six is simply not recorded."
+    ]},
+    { h:"9 November 1938", p:[
+      "On the evening of <b>9 November 1938</b>, after the annual Nazi commemoration of the 1923 putsch, Hitler and the party leadership gathered in that dance hall. News had come that the German diplomat Ernst vom Rath had died in Paris, shot two days earlier by Herschel Grynszpan. Hitler left. Then <b>Joseph Goebbels</b> rose, at around <b>22:30</b>, and gave the inflammatory speech that set off the nationwide pogrom now called <b>Kristallnacht</b>.",
+      "It began here. In this building, in a beautiful medieval room, sixty metres from where you are standing. Munich called itself the <i>Hauptstadt der Bewegung</i> — Capital of the Movement — and this is one of the reasons why.",
+      "Munich's Jewish community had already been targeted earlier that same year: the great main synagogue on Herzog-Max-Straße was destroyed on Hitler's personal order in <b>June 1938</b>, five months before Kristallnacht — the first synagogue in Germany the Nazis destroyed."
+    ]}
+  ],
+  look:[
+    "The two <b>surviving original statues</b>: Ludwig the Bavarian on the west façade, Henry the Lion — Munich's founder — on the east.",
+    "The tower and spire were rebuilt unusually late, in <b>1971–74</b>, following the 15th-century Gothic original. The tower had been at risk of collapse.",
+    "The <b>Spielzeugmuseum</b> (toy museum) occupies four floors of the tower — a genuinely charming climb if you have children, daily 10:00–17:30, around €6."
+  ],
+  sources:[
+    {t:"muenchen.de – Old Town Hall", url:"https://www.muenchen.de/en/sights/munichs-old-town-hall-toy-museum-and-festival-hall"},
+    {t:"USHMM – Kristallnacht", url:"https://encyclopedia.ushmm.org/content/en/article/kristallnacht"}
+  ]
+},
+
+/* ---------- 10 ---------- */
+{
+  name:"St Peter's — \"Alter Peter\"",
+  era:"Munich's oldest church",
+  walk:"120 m · 2 min",
+  lat:48.13644, lon:11.57594,
+  walk_note:"From Marienplatz head south past the Rathaus corner and up the short rise to the church. Yes, that is a <b>hill</b> — the only real one in the old town.",
+  blocks:[
+    { p:[
+      "You just walked up the <b>Petersbergl</b>, the low rise that is the reason Munich is here at all. There was a settlement on this hill before Henry the Lion's 1158 charter — this is the pre-city city. St Peter is Munich's oldest parish church, and Münchners call it <b>Alter Peter</b>, Old Pete, with the affection reserved for something that has been in the family a long time.",
+      "The building has been Romanesque, Gothic, Baroque and Rococo in turn, burned, bombed and rebuilt. It is less a church than a stratigraphy."
+    ]},
+    { h:"The bones in the glass case", p:[
+      "In a side chapel, in a glass shrine, lies <b>St Munditia</b>: a complete skeleton, dressed in silk and lace, encrusted with gold thread and jewels, holding a palm frond, with glass eyes set into the skull and her teeth carefully arranged. Her relics were brought from the Roman catacombs in <b>1675</b>.",
+      "She is patron saint of spinsters. She is also, to modern eyes, deeply unsettling — and that reaction is itself historically interesting. Baroque Catholicism did not find death and beauty incompatible, and this is what devotion looked like when the Counter-Reformation was answering Protestant austerity with maximum sensory splendour. Bring a coin for the light box."
+    ]},
+    { h:"The tower", p:[
+      "<b>91 m</b> to the cross, with a viewing platform at <b>56 m</b>, reached by <b>306 steps</b> past the bell chamber. It is not a lift, it is a stair, and the last section is tight.",
+      "It is also, for my money, the best view in Munich — better than the Rathaus tower, because from here you can see the Rathaus, the Frauenkirche and the Theatinerkirche all at once, with the Alps behind them on a clear day. If you only climb one tower on this walk, climb this one."
+    ]}
+  ],
+  look:[
+    "The height difference as you approach — Munich is famously flat, so a 10-metre rise reads as dramatic.",
+    "Inside: the <b>Rococo overhaul</b> of a Gothic shell, with Johann Baptist Zimmermann's ceiling work. The choir fresco was commissioned for restoration in 2023 (salt damage, €580,000) so there may be scaffolding.",
+    "The <b>Rindermarkt</b> just south of the church — the old cattle market, now a small square with a bronze herd of cattle."
+  ],
+  practical:"Church free. Tower <b>12:00–16:30 daily</b> per the city (a few guides list longer summer hours — check on the door). €5, reduced €3, ages 6–18 €2, under 6 free. No advance booking, and there can be a queue on the stairs.",
+  sources:[
+    {t:"muenchen.de – Alter Peter", url:"https://www.muenchen.de/en/sights/alter-peter-info-and-entrance-fees-church-st-peter-lookout-tower"},
+    {t:"de.wikipedia – St. Peter (München)", url:"https://de.wikipedia.org/wiki/St._Peter_(M%C3%BCnchen)"}
+  ]
+},
+/* ---------- 11 ---------- */
+{
+  name:"Viktualienmarkt",
+  era:"Food market since 1807",
+  walk:"150 m · 2 min",
+  lat:48.1351, lon:11.5760,
+  walk_note:"Continue south from St Peter's and the market opens out in front of you. Head for the tall blue-and-white striped pole.",
+  blocks:[
+    { p:[
+      "Founded by royal decree of <b>King Maximilian I Joseph on 2 May 1807</b> — note the date, it is often given wrongly as 3 May. The reason was congestion: the food trade had outgrown Marienplatz, so the city cleared the old Holy Ghost hospice buildings and moved it here. It expanded through the 1820s, gained a market hall in 1852, and lost the fish trade to Westenriederstraße in 1855.",
+      "Today: <b>18,591 m²</b> and over <b>100 traders</b>. It survived heavy war damage, and a postwar proposal to demolish it for multi-storey development was considered and rejected — one of the better decisions in Munich's reconstruction. It has been on the Bavarian register of intangible cultural heritage since 2014.",
+      "It is expensive and it knows tourists exist. It is also still where a lot of Munich actually buys its cheese."
+    ]},
+    { h:"The beer garden, and the one rule that matters", p:[
+      "The beer garden in the middle serves beer from Munich's <b>six breweries — Augustiner, Hacker-Pschorr, Löwenbräu, Hofbräu, Paulaner and Spaten</b> — on rotation, changing every five or six weeks. Whichever one is currently on is posted at the counter.",
+      "The rule worth knowing, and it is a legal right in Bavaria: <b>in a proper beer garden you may bring your own food.</b> Buy a pretzel, cheese, radishes and cold cuts from the market stalls, sit down at a bare wooden table, and buy only your drink. Locals do this constantly. Tables with tablecloths are table service — those are for ordering food.",
+      "And the chestnut trees overhead are not decorative. Before refrigeration, brewers dug cellars to keep beer cool through the summer and planted broad, shallow-rooted chestnuts above them for shade without disturbing the vaults. Beer gardens are shaded by chestnuts because of nineteenth-century thermodynamics."
+    ]},
+    { h:"The maypole", p:[
+      "The current tradition dates only from <b>4 May 1962</b>, on the suggestion of Mayor Albert Bayerle, and the pole is replaced every few years. The carved figures up the shaft show the crafts and guilds of the city.",
+      "Bavarian villages traditionally <b>steal each other's maypoles</b> and ransom them back in beer — a genuine living custom, though it is not documented as ever having happened to this particular pole."
+    ]},
+    { h:"The comedians in the fountains", p:[
+      "Scattered around the market are fountains honouring Munich's folk performers, most notably <b>Karl Valentin</b> (1882–1948) and his stage partner <b>Liesl Karlstadt</b>, and the singer Weiß Ferdl. Valentin was an absurdist comedian of genuine originality — Brecht admired him, Beckett has been compared to him — and his humour, bleak, circular and obsessed with bureaucratic pedantry, is about as close as you get to the Munich temperament in concentrated form."
+    ]}
+  ],
+  look:[
+    "The <b>current brewery sign</b> at the beer garden counter — it tells you which of the six is on this month.",
+    "Radi: giant white <b>radishes</b> cut in a spiral and salted, sold to eat with beer.",
+    "<b>Weisswurst</b>, if it is before noon. The old rule is that it must not hear the midday bell — it was made fresh without preservatives and had to be eaten the same morning.",
+    "The fountains — see how many performers you can find."
+  ],
+  practical:"No uniform hours; the city-mandated minimum is Mon–Fri 10:00–18:00 (to 17:00 in winter), Sat 10:00–15:00, <b>closed Sundays</b>. Individual food stalls and the beer garden vary.",
+  sources:[
+    {t:"muenchen.de – Viktualienmarkt", url:"https://www.muenchen.de/en/sights/attractions/viktualienmarkt-top-sight-munich"}
+  ]
+},
+
+/* ---------- 12 ---------- */
+{
+  name:"Church of the Holy Spirit",
+  era:"Hospital church from 1271",
+  walk:"150 m · 2 min",
+  lat:48.13611, lon:11.57722,
+  walk_note:"On the north-east edge of the market, at Prälat-Miller-Weg. Two minutes, and worth stepping inside for one.",
+  blocks:[
+    { p:[
+      "A quick stop with a long memory. There was a hospice chapel here by <b>1250</b>, and from <b>1271</b> the church of the <b>Heilig-Geist-Spital</b> — the Holy Ghost hospital, medieval Munich's institution for the sick, the old and the destitute. It stayed a hospital parish for nearly six centuries and only became an ordinary city parish church in <b>1844</b>.",
+      "That is the connection to the market outside: the Viktualienmarkt was laid out partly on land the city acquired by demolishing this hospice complex."
+    ]},
+    { h:"A building in layers", p:[
+      "It burned in the <b>1327 fire</b> that devastated Munich, was rebuilt as a Gothic hall church and completed in <b>1392</b> — of which only the choir buttresses and the north wall of the nave survive. In 1885, after the hospice buildings came down, Franz Löwel added three bays and a neo-Baroque façade at the west end.",
+      "Then the war: near-total damage, furnishings largely destroyed. Rebuilt from 1946 through the 1950s with a plain white interior — and then in the <b>late 1960s</b> the architect Erwin Schleich replaced that austerity with recreations of the original frescoes and Rococo stucco. So the exuberant interior you walk into is not a survival and not a 1950s restoration; it is a third layer, a 1960s idea of what had been lost."
+    ]}
+  ],
+  look:[
+    "The <b>Rococo stucco and frescoes</b> — knowing they are 1960s reconstructions rather than 18th-century originals changes how you read the room, and it is a good example of how much of Munich's \"old town\" is a decision made after 1945.",
+    "The surviving medieval <b>choir buttresses</b> outside, on the east end."
+  ],
+  practical:"Mon–Fri 09:00–20:00, Sat–Sun 08:30–20:00. Free.",
+  sources:[
+    {t:"muenchen.de – Heilig-Geist-Kirche", url:"https://www.muenchen.de/en/sights/heilig-geist-kirche-church-city-center-viktualienmarkt"}
+  ]
+},
+
+/* ---------- 13 ---------- */
+{
+  name:"Alter Hof",
+  era:"The first Wittelsbach castle",
+  walk:"280 m · 4 min",
+  lat:48.13806, lon:11.57806,
+  walk_note:"Head north-east via Sparkassenstraße into the quiet enclosed courtyard of the <b>Alter Hof</b>. After the market this will feel abruptly silent — which is the point.",
+  blocks:[
+    { p:[
+      "This courtyard is where Munich's rulers actually lived before they got grand. Archaeology shows a castle complex here in the <b>late 12th century</b>, probably founded by Otto von Wittelsbach and expanded by his son. The Alter Hof itself is first documented in <b>1319</b> — the frequently quoted date of 1253 is not supported by the sources.",
+      "Its great moment: <b>Ludwig IV, \"Ludwig the Bavarian\"</b>, ruled from here as Holy Roman Emperor. For a few decades in the 14th century this modest courtyard was an imperial residence. His cenotaph is in the Frauenkirche you saw earlier.",
+      "The dynasty then did what dynasties do and moved somewhere bigger — first to the Neuveste under Wilhelm IV in the early 16th century, and eventually to the Residenz you will reach shortly. The Alter Hof became offices: treasury, court library, brewing administration. The <b>Wittelsbachs ruled Bavaria from 1180 until 1918</b> — 738 years, one of the longest runs of any European dynasty — and this courtyard is where it started."
+    ]},
+    { h:"The oriel and the monkey", p:[
+      "On the south side, on the Burgstock, there is a small projecting bay window — an oriel — called the <b>Affenturm</b>, the Monkey Tower."
+    ],
+      legend:"<b>The monkey story.</b> A court monkey is said to have snatched the infant Ludwig the Bavarian from his cradle, carried him up onto the roof, and — to everyone's considerable relief — carried him safely back down. Charming, and definitely not true. Historians point out that the story probably attached originally to a different, demolished tower, and that this oriel dates from <b>around the mid-15th century</b> — more than 160 years after Ludwig's birth in 1282. The name is old; the connection is not."
+    },
+    { h:"Old and not-old", p:[
+      "Only two of the five wings — the <b>Burgstock</b> (south) and <b>Zwingerstock</b> (west) — keep their historic roof structures and detail. They were carefully restored and won the City of Munich Façade Prize in 2004.",
+      "The other three were largely destroyed in the war, rebuilt plainly after 1950, <b>demolished again in 2001</b> and rebuilt by private investors, completed 2003–06, with an oxide-red metal-and-glass roof skin. Granting private development rights on a site this historic was contentious, and you can judge the result for yourself: stand in the middle and turn slowly."
+    ]}
+  ],
+  look:[
+    "The oriel's <b>two rows of five Wittelsbach coats of arms</b>, probably commissioned by Duke Sigismund, who lived here from 1466 and was obsessed with heraldry.",
+    "The contrast between the medieval brick-and-timber wings and the 2000s reconstruction — the roofline gives it away instantly.",
+    "The free <b>Infopoint</b> for Bavarian museums and palaces in the courtyard, and a genuine surviving fragment of the <b>first city wall</b> a short way off at Burgstraße 8."
+  ],
+  sources:[
+    {t:"muenchen.de – Alter Hof", url:"https://www.muenchen.de/sehenswuerdigkeiten/top-sehenswuerdigkeiten/alter-hof"},
+    {t:"de.wikipedia – Alter Hof", url:"https://de.wikipedia.org/wiki/Alter_Hof_(M%C3%BCnchen)"}
+  ]
+},
+
+/* ---------- 14 ---------- */
+{
+  name:"Hofbräuhaus & Platzl",
+  era:"Court brewery, 1589",
+  walk:"200 m · 3 min",
+  lat:48.13750, lon:11.57972,
+  walk_note:"East to <b>Platzl</b>. You will hear it before you see it.",
+  blocks:[
+    { p:[
+      "Founded on <b>27 September 1589 by Duke Wilhelm V</b> — the same duke who built St Michael and got married on Marienplatz in 1568 — for an entirely practical reason: the court resented the cost of importing beer from Einbeck in Lower Saxony, so it built its own brewery. The original was at the Alter Hof, the courtyard you just left.",
+      "<b>Ludwig I opened it to the public in 1828.</b> Ownership passed to the Bavarian state in 1852, which is why it is the <i>Staatliches</i> Hofbräuhaus. Brewing stopped on this site on <b>22 May 1896</b>; the present building by Max Littmann went up the following year. Hofbräu is brewed at Munich-Riem today, and there are no brewery tours here."
+    ]},
+    { h:"Two dates about beer worth getting right", p:[
+      "Munich issued a beer regulation in <b>1487</b> restricting brewers to barley, hops and water. The famous Bavaria-wide <b>Reinheitsgebot</b> — the purity law — came in <b>1516</b>. Both predate any understanding of yeast, which is why yeast is not in the original list. It is often called the world's oldest food safety regulation still broadly in force, and Bavarians will tell you so.",
+      "<b>Oktoberfest</b>, incidentally, started as a wedding party: the marriage of Crown Prince Ludwig to Therese of Saxe-Hildburghausen in <b>1810</b>, celebrated with a horse race on the meadow still named after her, the Theresienwiese. It went well enough that they did it again."
+    ]},
+    { h:"The lockers", p:[
+      "This is the detail that separates the Hofbräuhaus from a theme park. There are more than <b>125 Stammtische</b> — regulars' tables — with about <b>3,500 regulars</b>: craftspeople, taxi drivers, traditional-costume clubs, airline captains. In <b>1972</b>, when the house wanted to replace the old grey stoneware steins, the regulars refused to give theirs up. The compromise was a vault of <b>616 lockable compartments</b> where they keep their own mugs. It is still in use.",
+      "In 1632, during the Swedish occupation, the besiegers were partly bought off in beer — <b>23,168 litres</b> from the Hofbräuhaus. Whatever else you think of the place, it has been solving Munich's problems for a while."
+    ],
+      legend:"You will be told the <b>1923 Beer Hall Putsch</b> started here. It did not — that was the <b>Bürgerbräukeller</b>, across the river and long since demolished. What did happen in this building was the <b>February 1920 meeting</b> at which the NSDAP programme was proclaimed. Not better, but not the same event, and the distinction matters."
+    },
+    { h:"Platzl itself", p:[
+      "Not a designed square — just a widening of Orlandostraße, documented under this name since at least <b>1780</b>. From 1906 into the mid-1990s a Bavarian folk-comedy theatre stood opposite the Hofbräuhaus, seating around 600, with comic songs, Alpine plays and brass. Duelling student fraternities have kept houses around here since the 19th century, and three still do."
+    ]}
+  ],
+  look:[
+    "The <b>Schwemme</b> — the ground-floor hall, around 1,000 seats at long shared tables under painted vaults, with a band. This is the only part of the building that <b>survived the 1945 raids intact</b>; everything above it is a 1958 reconstruction.",
+    "You do not get a table; you <b>join</b> one. No reservations in the Schwemme or the garden.",
+    "The <b>HB monogram</b> everywhere — Hofbräu, the court brewery, still using its ducal mark.",
+    "A 10-minute look round costs nothing. Whether you drink here or at a quieter Augustiner nearby is a matter of taste; roughly half the daily custom is said to be local regulars, which is more than the reputation suggests."
+  ],
+  practical:"Daily 11:00–24:00 (Sat–Sun from 10:30). Free to walk in and look around.",
+  sources:[
+    {t:"muenchen.de – Hofbräuhaus", url:"https://www.muenchen.de/en/sights/buildings-and-monuments/hofbrauhaus-am-platzl"},
+    {t:"hofbraeuhaus.de – history", url:"https://www.hofbraeuhaus.de/en/history/"}
+  ]
+},
+/* ---------- 15 ---------- */
+{
+  name:"The Residenz & the lions",
+  era:"Wittelsbach palace, 1385–1918",
+  walk:"330 m · 5 min",
+  lat:48.1403, lon:11.5786,
+  walk_note:"North via Pfisterstraße and Maximilianstraße to <b>Max-Joseph-Platz</b>, then along <b>Residenzstraße</b>. Stop at the two portals guarded by bronze lions.",
+  blocks:[
+    { p:[
+      "Where the Alter Hof was a castle, this is a state. The Residenz grew from 1385 into one of the largest palace complexes in Europe — ten courtyards, around 130 rooms open as a museum — and it was the seat of Bavarian dukes, electors and finally kings until the monarchy ended in <b>1918</b>.",
+      "That ending was abrupt. On 7–8 November 1918, as Germany collapsed, the journalist <b>Kurt Eisner</b> declared Bavaria a republic; King Ludwig III fled. Seven and a half centuries of Wittelsbach rule finished in a single night, without a shot fired at the palace. Eisner was assassinated three months later, and Munich spent 1919 lurching through a short-lived Soviet republic and its violent suppression — the political chaos in which the Nazi party was born a few streets from here."
+    ]},
+    { h:"Detour worth making", p:[
+      "If you have half an hour to spare, the <b>Antiquarium</b> is the reason to go in: a barrel-vaulted Renaissance hall of 1568–71, built to hold the dukes' antique sculpture collection, and the largest surviving Renaissance interior north of the Alps. The <b>Treasury</b> next door holds the crown jewels, including a jewelled gold statuette of St George about 50 cm high made in the 1580s–90s, and the prayer book of Charles the Bald from around 860.",
+      "Also here: the <b>Cuvilliés Theatre</b>, a red-and-gold Rococo court theatre of 1751–53. Its interior was <b>dismantled and carried to safety in 1943</b>; the empty shell burned out on 18 March 1944. The rescued interior was reinstalled in a different part of the palace and reopened on 14 June 1958 for Munich's 800th anniversary, with <i>The Marriage of Figaro</i>. The room you can visit is authentic — the location is not."
+    ]},
+    { h:"The lions", p:[
+      "The four bronze lions on Residenzstraße are the most-touched objects in Munich. Near the bottom of each shield is a small bearded face, and you will see a steady stream of people rubbing it for luck. Rub it if you like; two things are worth knowing.",
+      "First, these lions were <b>never made to guard a gate</b>. They were salvage — left over from an abandoned tomb project for Duke Wilhelm V — and repurposed here around <b>1616</b>. Second, the Bavarian Palace Administration itself describes the luck-rubbing as folklore rather than tradition. It is a modern habit that has polished four centuries of bronze down to bare metal, which is its own kind of monument."
+    ]}
+  ],
+  look:[
+    "The <b>Patrona Bavariae</b> — a bronze crowned Madonna on a crescent moon in a wall niche between the two lion portals, commissioned by <b>Maximilian I in 1616</b>, on the eve of the Thirty Years' War. The same elector who later vowed the column on Marienplatz. Bavaria placed itself under Mary's protection before the catastrophe, and thanked her after it.",
+    "How <b>plain</b> the Residenzstraße front is. Bavarian rulers did their showing off inside.",
+    "Across Max-Joseph-Platz, the <b>Nationaltheater</b> — where four Wagner operas had their premieres, paid for by Ludwig II.",
+    "From Max-Joseph-Platz, look south-east down <b>Maximilianstraße</b>: Maximilian II's 1850s boulevard, built in a style he personally commissioned into existence, the <i>Maximilianstil</i>. He died before it was finished. It runs dead straight to the Bavarian parliament. Look, don't walk — it's a 2 km round trip."
+  ],
+  practical:"Residenz Museum and Treasury are separate tickets with a combination option; check residenz-muenchen.de for current hours and prices. The courtyards and the lions are free and always accessible.",
+  sources:[
+    {t:"residenz-muenchen.de", url:"https://www.residenz-muenchen.de/englisch/tourist/admiss.htm"},
+    {t:"Bavarian Palaces blog – the lions", url:"https://schloesserblog.bayern.de/residenz-muenchen/gut-gebrullt-lowe-die-bronzenen-torwachter-der-residenz"}
+  ]
+},
+
+/* ---------- 16 ---------- */
+{
+  name:"Odeonsplatz & Feldherrnhalle",
+  era:"1841–44 · and 9 November 1923",
+  walk:"200 m · 3 min",
+  lat:48.1416, lon:11.5773,
+  walk_note:"Continue north up Residenzstraße. The square opens out and the open-arched loggia is straight ahead of you, closing the end of the street.",
+  blocks:[
+    { p:[
+      "<b>Ludwig I</b> laid out this square from 1817 with the architect Leo von Klenze, as part of a programme to turn Munich into what he called the Athens on the Isar — a neoclassical capital of art and learning. He built the museums, the university, the great boulevards. He also fell so publicly in love with the dancer <b>Lola Montez</b>, and made himself so unpopular defending her, that he was forced to abdicate in the revolutionary year <b>1848</b>.",
+      "The <b>Feldherrnhalle</b> — Field Marshals' Hall — was built <b>1841–44</b> by Friedrich von Gärtner on Ludwig I's commission, modelled explicitly on the <b>Loggia dei Lanzi</b> in Florence. Its cornerstone was laid on <b>18 June 1841</b>, the anniversary of Waterloo. The statues are two Bavarian commanders, Tilly and Wrede, cast by Ferdinand von Miller from melted-down cannon."
+    ]},
+    { h:"9 November 1923", p:[
+      "This spot is where the Nazi movement was stopped, briefly, by four policemen doing their jobs.",
+      "On the night of 8 November 1923 Hitler and the SA seized a political meeting at the <b>Bürgerbräukeller</b> beer hall across the river and declared a national revolution. The next morning a column of around two thousand marched into the city centre, intending to take it. At the top of Residenzstraße — right here, where you are standing — they met a cordon of <b>Bavarian State Police</b>. Someone fired. In the exchange that followed, <b>16 putschists and 4 policemen</b> were killed. Hitler dislocated his shoulder and fled; he was arrested two days later.",
+      "He served nine months of a five-year sentence, wrote <i>Mein Kampf</i> in prison, and concluded that power would have to be taken legally rather than by force. The putsch failed and taught him the lesson that made him dangerous."
+    ]},
+    { h:"What stood here 1933–1945", p:[
+      "After 1933 a memorial designed by Paul Ludwig Troost was installed on the east side, facing Residenzstraße, bearing the names of the sixteen dead putschists — now recast as the movement's first martyrs. An <b>SS honour guard stood permanently beside it</b>, and every passer-by was required to give the Hitler salute.",
+      "A commemorative march came through here every 9 November throughout the Third Reich. The swastika flag carried in the 1923 march — stained with a dying putschist's blood — became the movement's holiest relic, ritually touched to new banners at the Nuremberg rallies.",
+      "The memorial was removed in 1945. A small bronze plaque at the Residenz now commemorates the four policemen who were killed."
+    ],
+      heads:"<b>The Feldherrnhalle is under wraps in 2026.</b> A €12.15 million state restoration began in spring 2025 and runs about three years, to roughly 2028 — all stonework, the balustrade, the bronzes, the step lions, a new copper roof with photovoltaics. The building is scaffolded and shrouded. You will not see much of it, but the ground you are standing on is the point of this stop."
+    }
+  ],
+  look:[
+    "The <b>rise in the pavement</b> at the mouth of Residenzstraße. The 1923 column came up this narrow street into an open square and a police line — it is a bad place to be caught, and standing here makes the geography obvious.",
+    "The two <b>stone lions</b> on the steps. Guides will tell you one has its mouth open toward the church and one closed toward the Residenz, symbolising state and religion. Treat that as unverified folklore.",
+    "The <b>1892 Bavarian Army Monument</b> inside the loggia, with its lions.",
+    "How completely ordinary the square is on a normal afternoon: cafés, cyclists, a busker. That is worth a moment's thought too."
+  ],
+  sources:[
+    {t:"muenchen.de – Feldherrnhalle", url:"https://www.muenchen.de/en/sights/feldherrnhalle"},
+    {t:"bayern.de – restoration announcement", url:"https://www.bayern.de/fueracker-und-bernreiter-umfassende-sanierung-der-feldherrnhalle-startet-freistaat-investiert-bis-zu-1215-millionen-euro-3-jahre-bauzeit-geplant/"}
+  ]
+},
+
+/* ---------- 17 ---------- */
+{
+  name:"Viscardigasse",
+  era:"The shirkers' alley",
+  walk:"40 m",
+  lat:48.1413, lon:11.5772,
+  walk_note:"Turn your back on the Feldherrnhalle and step into the narrow paved lane running west, between Residenzstraße and Theatinerstraße. Fifty metres long. Look down at the cobbles.",
+  blocks:[
+    { p:[
+      "This is the best small thing in Munich, and thousands of people walk over it without noticing.",
+      "The lane is officially named after the Baroque architect Giovanni Antonio Viscardi. Its other name, from the 1930s, is <b>Drückebergergassl</b> — roughly, <i>shirkers' alley</i>.",
+      "Because of where it runs: if you were walking north along Theatinerstraße in the Nazi years and did not want to pass the Feldherrnhalle memorial, with its SS honour guard and its compulsory salute, you could duck through here and come out the other side having saluted nobody. It cost you nothing, nobody could prove anything, and you had not raised your arm.",
+      "In <b>1995</b> the artist <b>Bruno Wank</b> laid a winding trail of <b>bronze cobblestones</b> through the paving, tracing the path people took. That is what is under your feet. It is not a plaque and there is no text; you have to know."
+    ]},
+    { h:"How much of this is true?", p:[
+      "Worth being honest about. The place-name and the general practice are accepted by the city, by historians and by the standard references. But it was by its nature an unrecorded act — nobody kept a list of who detoured. The evidence is contemporary and post-war testimony, not documents.",
+      "So: the phenomenon is well established, the individual stories are anecdotal. What is certain is that the detour existed, that people named it something mocking, and that fifty years later the city thought it worth marking in bronze — a memorial not to heroism but to the smallest available act of non-compliance. Most people are not heroes. Some of them took the side street."
+    ]}
+  ],
+  look:[
+    "The <b>bronze setts</b> — they are darker and smoother than the granite around them, and they wander rather than run straight.",
+    "How <b>short</b> it is. The whole moral drama takes about forty seconds to walk.",
+    "The sightline back to the Feldherrnhalle from each end — you can see exactly what was being avoided."
+  ],
+  sources:[
+    {t:"Wikipedia – Drückebergergasse", url:"https://en.wikipedia.org/wiki/Dr%C3%BCckebergergasse"}
+  ]
+},
+
+/* ---------- 18 ---------- */
+{
+  name:"Theatinerkirche",
+  era:"Italian High Baroque, 1663–1690",
+  walk:"80 m · 1 min",
+  lat:48.1420, lon:11.5771,
+  walk_note:"Back out onto Odeonsplatz. The vivid yellow church with the green dome closes the north-west side. Last stop — and <b>Odeonsplatz U-Bahn</b> is right here when you're done.",
+  blocks:[
+    { p:[
+      "A thank-you for a baby. Elector <b>Ferdinand Maria</b> and his wife <b>Henriette Adelaide of Savoy</b> had waited years for an heir; when Max Emanuel was born in <b>1662</b> they commissioned this church in gratitude, starting work in April 1663.",
+      "Henriette Adelaide was Italian and got her way about the architect: <b>Agostino Barelli</b> of Bologna, working from <b>Sant'Andrea della Valle</b> in Rome. The result was the <b>first Italian High Baroque church north of the Alps</b> — a genuine import, and enormously influential on everything Baroque built in southern Germany afterwards. Enrico Zuccalli took over in 1674 and added the twin towers and the dome. Towers <b>64 m</b>, dome about <b>70 m</b>.",
+      "The Rococo façade came a century late — designed in <b>1765</b> by François de Cuvilliés the Elder and finished by his son in 1768. For roughly a hundred years, the church stood there with its front unfinished."
+    ]},
+    { h:"The yellow", p:[
+      "That ochre is the most recognisable colour in Munich and it is doing real work: it is the traditional colour of the Wittelsbach court, and it marks this out as a dynastic church rather than a civic one. On a grey February afternoon it is the only warm thing on the square."
+    ]},
+    { h:"The crypt", p:[
+      "Below is the <b>Fürstengruft</b>, the princes' vault, completed in <b>1685</b>: <b>33 metal sarcophagi</b>, some 49 Wittelsbach burials spanning the 17th to the 20th century. The founders are here, and their son Max Emanuel, and their grandson who briefly became <b>Emperor Karl VII</b>, and <b>King Otto of Greece</b> — a Bavarian prince who was made king of Greece in 1832 and deposed in 1862 — and Prince Regent Luitpold.",
+      "And <b>Crown Prince Rupprecht</b>, who died in 1955: the man who would have been King of Bavaria, who commanded an army group in the First World War, refused all dealings with the Nazis, lost family members to Dachau and Buchenwald, and died a private citizen. He is the last Wittelsbach head of the house buried here. Seven and a half centuries of dynasty, ending in a crypt off a shopping street."
+    ]}
+  ],
+  look:[
+    "The <b>shock of the interior</b>: after all that yellow, the inside is entirely white. Massive columns, filigree stucco, no colour at all. It is one of the best surprises in the city.",
+    "The <b>dome from inside</b>, looking straight up.",
+    "Severely destroyed in 1944–45 and rebuilt <b>1946–1955</b> — like most of what you have seen today.",
+    "Directly across Odeonsplatz, the <b>Hofgarten</b>: a formal court garden of 1613–17 with a twelve-sided pavilion at its centre. If you have fifteen minutes and it's summer, go — people dance tango and swing under the Dianatempel on warm evenings, free and unorganised. It is the nicest way to end this walk."
+  ],
+  practical:"Church free during opening hours. Crypt: <b>1 May – 1 November only</b>, Mon–Sat 11:30–15:00, closed 2 Nov–30 Apr. €3, reduced €2, ages 11–17 €1, under 10 free — or €5 for a combination ticket with the St Michael crypt.",
+  sources:[
+    {t:"muenchen.de – Theatinerkirche", url:"https://www.muenchen.de/en/sights/churches/theatiner-church-st-kajetan-odeonsplatz-all-you-need-know"},
+    {t:"theatinerkirche.de", url:"http://www.theatinerkirche.de/index.php?cID=35"}
+  ]
+}
+
+];
+
+/* ============================================================
+   APP
+   ============================================================ */
+(function(){
+  "use strict";
+
+  var map, meMarker, meCircle, follow = false, watchId = null;
+  var markers = [], current = 0, routeLine = null;
+  var visited = loadVisited();
+
+  /* ---------- map ---------- */
+  function initMap(){
+    var pts = STOPS.map(function(s){ return [s.lat, s.lon]; });
+    map = L.map('map', {
+      zoomControl:false,
+      attributionControl:true,
+      tap:true
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19, minZoom:13,
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    routeLine = L.polyline(pts.filter(function(_,i){ return !STOPS[i].optional; }), {
+      color:'#d8a13a', weight:4, opacity:.65, dashArray:'1 9', lineCap:'round'
+    }).addTo(map);
+
+    STOPS.forEach(function(s, i){
+      var cls = 'pin' + (s.optional ? ' optional' : '') + (visited[i] ? ' done' : '');
+      var m = L.marker([s.lat, s.lon], {
+        icon: L.divIcon({ className:'', html:'<div class="'+cls+'">'+(i+1)+'</div>', iconSize:[30,30], iconAnchor:[15,15] }),
+        zIndexOffset: 100
+      }).addTo(map);
+      m.on('click', function(){ show(i, true); });
+      markers.push(m);
+    });
+
+    map.fitBounds(routeLine.getBounds(), { paddingTopLeft:[30,90], paddingBottomRight:[30, window.innerWidth<820 ? 150 : 30] });
+  }
+
+  /* ---------- rendering ---------- */
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+  function show(i, recenter){
+    if(i < 0 || i >= STOPS.length) return;
+    current = i;
+    var s = STOPS[i];
+
+    document.getElementById('sheetnum').textContent = (i+1);
+    document.getElementById('sheettitle').textContent = s.name;
+
+    var sub = [];
+    if(s.era) sub.push(esc(s.era));
+    if(s.walk) sub.push(esc(s.walk));
+    if(s.optional) sub.push('optional');
+    document.getElementById('sheetsub').innerHTML = sub.join('<span class="sep">•</span>');
+
+    document.getElementById('body').innerHTML = buildBody(s);
+    document.getElementById('body').scrollTop = 0;
+
+    document.getElementById('btnPrev').disabled = (i === 0);
+    document.getElementById('btnNext').disabled = (i === STOPS.length - 1);
+    markVisitedBtn();
+
+    markers.forEach(function(m, j){
+      var el = m.getElement() && m.getElement().querySelector('.pin');
+      if(!el) return;
+      el.classList.toggle('active', j === i);
+      el.classList.toggle('done', !!visited[j] && j !== i);
+    });
+
+    stopSpeech();
+    openSheet();
+    if(recenter !== false){
+      var off = window.innerWidth < 820 ? 0.0011 : 0;
+      map.panTo([s.lat - off, s.lon], { animate:true, duration:.5 });
+      if(map.getZoom() < 16) map.setZoom(16);
+    }
+    document.getElementById('title').innerHTML = '<b>'+(i+1)+'.</b> ' + esc(s.name);
+  }
+
+  function buildBody(s){
+    var h = '';
+    if(s.walk_note) h += box('walk','Getting there', s.walk_note);
+    (s.blocks || []).forEach(function(b){
+      if(b.h) h += '<h4>'+esc(b.h)+'</h4>';
+      if(b.p) b.p.forEach(function(p){ h += '<p>'+p+'</p>'; });
+      if(b.list) h += '<ul>' + b.list.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+      if(b.legend) h += box('legend','Legend, not fact', b.legend);
+      if(b.heads) h += box('heads','Heads up in 2026', b.heads);
+    });
+    if(s.look && s.look.length){
+      h += '<h4>Look for</h4><ul>' + s.look.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+    }
+    if(s.practical) h += box('walk','Practical', s.practical);
+    if(s.sources && s.sources.length){
+      h += '<div class="srcs">Sources: ' + s.sources.map(function(u){
+        return '<a href="'+u.url+'" target="_blank" rel="noopener">'+esc(u.t)+'</a>';
+      }).join(' · ') + '</div>';
+    }
+    return h;
+  }
+  function box(cls, label, html){
+    return '<div class="box '+cls+'"><span class="lbl">'+label+'</span>'+html+'</div>';
+  }
+
+  /* ---------- speech ---------- */
+  var synth = window.speechSynthesis, queue = [], speaking = false;
+
+  function plainText(s){
+    var parts = [s.name + '.'];
+    (s.blocks || []).forEach(function(b){
+      if(b.h) parts.push(b.h + '.');
+      if(b.p) b.p.forEach(function(p){ parts.push(strip(p)); });
+      if(b.list) b.list.forEach(function(x){ parts.push(strip(x)); });
+      if(b.legend) parts.push('Legend, not fact. ' + strip(b.legend));
+      if(b.heads) parts.push('Heads up. ' + strip(b.heads));
+    });
+    if(s.look && s.look.length){
+      parts.push('Things to look for.');
+      s.look.forEach(function(x){ parts.push(strip(x)); });
+    }
+    return parts;
+  }
+  function strip(html){
+    var d = document.createElement('div');
+    d.innerHTML = html;
+    return (d.textContent || '').replace(/\s+/g,' ').trim();
+  }
+  function chunk(text){
+    // keep utterances short: some mobile engines truncate long strings
+    var out = [], sentences = text.match(/[^.!?]+[.!?]*/g) || [text], buf = '';
+    sentences.forEach(function(sn){
+      if((buf + sn).length > 220){ if(buf) out.push(buf.trim()); buf = sn; }
+      else buf += sn;
+    });
+    if(buf.trim()) out.push(buf.trim());
+    return out;
+  }
+  function pickVoice(){
+    var vs = synth.getVoices() || [];
+    var pref = ['Google UK English Female','Daniel','Serena','Google US English','Samantha','Karen'];
+    for(var i=0;i<pref.length;i++){
+      var v = vs.find(function(x){ return x.name === pref[i]; });
+      if(v) return v;
+    }
+    return vs.find(function(v){ return /^en[-_]GB/i.test(v.lang); })
+        || vs.find(function(v){ return /^en/i.test(v.lang); })
+        || null;
+  }
+  function speak(){
+    if(!('speechSynthesis' in window)){ toast('This browser has no built-in speech.'); return; }
+    if(speaking){ stopSpeech(); return; }
+    var text = plainText(STOPS[current]).join(' ');
+    queue = chunk(text);
+    if(!queue.length) return;
+    speaking = true;
+    setSpeakBtn(true);
+    var voice = pickVoice();
+    queue.forEach(function(t, idx){
+      var u = new SpeechSynthesisUtterance(t);
+      u.lang = voice ? voice.lang : 'en-GB';
+      if(voice) u.voice = voice;
+      u.rate = 0.97; u.pitch = 1.0;
+      if(idx === queue.length - 1) u.onend = function(){ speaking = false; setSpeakBtn(false); };
+      u.onerror = function(){ speaking = false; setSpeakBtn(false); };
+      synth.speak(u);
+    });
+  }
+  function stopSpeech(){
+    if('speechSynthesis' in window) synth.cancel();
+    speaking = false; setSpeakBtn(false);
+  }
+  function setSpeakBtn(on){
+    var b = document.getElementById('btnSpeak');
+    b.textContent = on ? '■ Stop' : '▶ Listen';
+    b.classList.toggle('primary', !on);
+  }
+  if('speechSynthesis' in window) synth.onvoiceschanged = function(){};
+
+  /* ---------- geolocation ---------- */
+  function toggleLocate(){
+    if(watchId !== null){
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null; follow = false;
+      if(meMarker){ map.removeLayer(meMarker); meMarker = null; }
+      if(meCircle){ map.removeLayer(meCircle); meCircle = null; }
+      document.getElementById('btnLocate').classList.remove('on');
+      return;
+    }
+    if(!navigator.geolocation){ toast('This browser has no location support.'); return; }
+    if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+      toast('Location needs an https:// address — see the note in the README.');
+    }
+    document.getElementById('btnLocate').classList.add('on');
+    follow = true;
+    watchId = navigator.geolocation.watchPosition(onPos, onPosErr, {
+      enableHighAccuracy:true, maximumAge:5000, timeout:20000
+    });
+  }
+  function onPos(pos){
+    var ll = [pos.coords.latitude, pos.coords.longitude];
+    var acc = pos.coords.accuracy || 30;
+    if(!meMarker){
+      meMarker = L.marker(ll, {
+        icon: L.divIcon({ className:'', html:'<div style="position:relative"><div class="mepulse"></div><div class="medot"></div></div>', iconSize:[16,16], iconAnchor:[8,8] }),
+        zIndexOffset:1000, interactive:false
+      }).addTo(map);
+      meCircle = L.circle(ll, { radius:acc, color:'#3d8bfd', weight:1, opacity:.4, fillColor:'#3d8bfd', fillOpacity:.09, interactive:false }).addTo(map);
+      map.setView(ll, Math.max(map.getZoom(), 17));
+      toast('Found you. The blue dot follows as you walk.');
+      nearestHint(ll);
+    } else {
+      meMarker.setLatLng(ll);
+      meCircle.setLatLng(ll).setRadius(acc);
+      if(follow) map.panTo(ll, { animate:true, duration:.6 });
+    }
+  }
+  function onPosErr(e){
+    document.getElementById('btnLocate').classList.remove('on');
+    watchId = null; follow = false;
+    var msg = 'Could not get your location.';
+    if(e && e.code === 1) msg = 'Location permission denied. Allow it in your browser settings.';
+    else if(e && e.code === 2) msg = 'Location unavailable — try again outdoors.';
+    else if(e && e.code === 3) msg = 'Location timed out. Try again.';
+    toast(msg);
+  }
+  function nearestHint(ll){
+    var best = -1, bd = 1e9;
+    STOPS.forEach(function(s,i){
+      var d = dist(ll[0], ll[1], s.lat, s.lon);
+      if(d < bd){ bd = d; best = i; }
+    });
+    if(best >= 0 && bd < 900) toast('Nearest stop: ' + (best+1) + '. ' + STOPS[best].name + ' — about ' + Math.round(bd) + ' m away.');
+  }
+  function dist(a1,o1,a2,o2){
+    var R=6371000, p=Math.PI/180;
+    var dA=(a2-a1)*p, dO=(o2-o1)*p;
+    var x=Math.sin(dA/2)*Math.sin(dA/2)+Math.cos(a1*p)*Math.cos(a2*p)*Math.sin(dO/2)*Math.sin(dO/2);
+    return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  }
+  // stop auto-following if the user drags the map
+  function bindDragBreak(){ map.on('dragstart', function(){ follow = false; }); }
+
+  /* ---------- visited ---------- */
+  function loadVisited(){
+    try { return JSON.parse(localStorage.getItem('munichTourVisited') || '{}'); }
+    catch(e){ return {}; }
+  }
+  function saveVisited(){
+    try { localStorage.setItem('munichTourVisited', JSON.stringify(visited)); } catch(e){}
+  }
+  function toggleVisited(){
+    visited[current] = !visited[current];
+    if(!visited[current]) delete visited[current];
+    saveVisited(); markVisitedBtn(); renderList();
+  }
+  function markVisitedBtn(){
+    var b = document.getElementById('btnDone');
+    b.textContent = visited[current] ? '✓ Visited' : 'Mark visited';
+    b.classList.toggle('primary', !!visited[current]);
+  }
+
+  /* ---------- stop list ---------- */
+  function renderList(){
+    var wrap = document.getElementById('listitems');
+    wrap.innerHTML = STOPS.map(function(s,i){
+      return '<div class="li'+(visited[i]?' done':'')+(s.optional?' opt':'')+'" data-i="'+i+'">' +
+             '<div class="n">'+(i+1)+'</div>' +
+             '<div class="t"><b>'+esc(s.name)+'</b><span>'+esc([s.era, s.walk].filter(Boolean).join(' · '))+'</span></div>' +
+             '</div>';
+    }).join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.li'), function(el){
+      el.addEventListener('click', function(){
+        closeList(); show(parseInt(el.dataset.i,10), true);
+      });
+    });
+    var n = Object.keys(visited).filter(function(k){ return visited[k]; }).length;
+    document.getElementById('listmeta').textContent =
+      STOPS.length + ' stops · about ' + totalKm() + ' km · ' + n + ' marked visited';
+  }
+  function totalKm(){
+    var main = STOPS.filter(function(s){ return !s.optional; }), t = 0;
+    for(var i=1;i<main.length;i++) t += dist(main[i-1].lat, main[i-1].lon, main[i].lat, main[i].lon);
+    return (t * 1.3 / 1000).toFixed(1);   // grid detour factor
+  }
+  function openList(){ renderList(); document.getElementById('list').classList.add('show'); }
+  function closeList(){ document.getElementById('list').classList.remove('show'); }
+
+  /* ---------- sheet ---------- */
+  var sheet = document.getElementById('sheet');
+  function openSheet(){ sheet.classList.add('open'); sheet.classList.remove('hidden'); }
+  function peekSheet(){ sheet.classList.remove('open'); sheet.classList.remove('hidden'); }
+  function toggleSheet(){ sheet.classList.toggle('open'); }
+
+  function bindSheetDrag(){
+    var startY = null, startOpen = false;
+    function down(e){
+      startY = (e.touches ? e.touches[0].clientY : e.clientY);
+      startOpen = sheet.classList.contains('open');
+    }
+    function up(e){
+      if(startY === null) return;
+      var endY = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY);
+      var dy = endY - startY;
+      if(Math.abs(dy) < 24){ toggleSheet(); }
+      else if(dy > 0 && startOpen){ peekSheet(); }
+      else if(dy < 0 && !startOpen){ openSheet(); }
+      startY = null;
+    }
+    ['touchstart','mousedown'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, down, {passive:true}); });
+    ['touchend','mouseup'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, up); });
+    document.getElementById('sheethead').addEventListener('click', function(){ toggleSheet(); });
+  }
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 4200);
+  }
+
+  /* ---------- boot ---------- */
+  function boot(){
+    if(!STOPS.length){ document.body.innerHTML = '<p style="padding:40px;font:16px sans-serif;color:#eee">No stop data loaded.</p>'; return; }
+    document.getElementById('sN').textContent = STOPS.filter(function(s){return !s.optional;}).length;
+    initMap();
+    bindDragBreak();
+    bindSheetDrag();
+    document.getElementById('sKm').textContent = totalKm();
+
+    document.getElementById('btnStart').addEventListener('click', function(){
+      document.getElementById('intro').classList.add('hide');
+      show(0, true);
+      // prime the speech engine on a user gesture (required by iOS)
+      if('speechSynthesis' in window){
+        try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch(e){}
+      }
+    });
+    document.getElementById('btnList').addEventListener('click', openList);
+    document.getElementById('btnCloseList').addEventListener('click', closeList);
+    document.getElementById('btnLocate').addEventListener('click', toggleLocate);
+    document.getElementById('btnSpeak').addEventListener('click', speak);
+    document.getElementById('btnPrev').addEventListener('click', function(){ show(current-1, true); });
+    document.getElementById('btnNext').addEventListener('click', function(){ show(current+1, true); });
+    document.getElementById('btnDone').addEventListener('click', toggleVisited);
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'ArrowRight') show(current+1, true);
+      if(e.key === 'ArrowLeft') show(current-1, true);
+      if(e.key === 'Escape'){ closeList(); stopSpeech(); }
+    });
+    window.addEventListener('pagehide', stopSpeech);
+
+    show(0, false);
+    peekSheet();
+    renderList();
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
