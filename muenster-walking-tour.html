@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1a18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Walking Tour</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#14130f;
+    --panel:#1e1c18;
+    --panel-2:#272420;
+    --ink:#f2ede3;
+    --ink-dim:#a9a196;
+    --accent:#d8a13a;      /* Munich yellow-gold */
+    --accent-ink:#241c07;
+    --line:#3a352e;
+    --legend:#7c6ba8;
+    --sheet-peek:132px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior:none;
+  }
+
+  /* ---------- MAP ---------- */
+  #map{position:fixed;inset:0;bottom:0;background:#2a2721;z-index:0}
+  .leaflet-container{background:#2a2721;font-family:inherit}
+  .leaflet-control-attribution{font-size:9px;background:rgba(20,19,15,.7);color:#8d867b}
+  .leaflet-control-attribution a{color:#b3aa9c}
+
+  /* numbered stop pins */
+  .pin{
+    display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:50%;
+    background:var(--panel);color:var(--ink);
+    border:2.5px solid var(--accent);
+    font-weight:700;font-size:14px;line-height:1;
+    box-shadow:0 2px 8px rgba(0,0,0,.55);
+    transition:transform .18s ease, background .18s ease;
+  }
+  .pin.done{opacity:.5}
+  .pin.active{background:var(--accent);color:var(--accent-ink);transform:scale(1.32);border-color:#fff}
+  .pin.optional{border-style:dashed}
+
+  /* my-location dot */
+  .medot{width:16px;height:16px;border-radius:50%;background:#3d8bfd;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 2px 10px rgba(0,0,0,.5)}
+  .mepulse{position:absolute;inset:-9px;border-radius:50%;background:rgba(61,139,253,.28);animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+
+  /* ---------- TOP BAR ---------- */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;z-index:600;
+    padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;
+    display:flex;gap:8px;align-items:center;
+    background:linear-gradient(to bottom,rgba(20,19,15,.93),rgba(20,19,15,.6) 70%,transparent);
+    pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto}
+  .tbtn{
+    background:rgba(30,28,24,.92);border:1px solid var(--line);color:var(--ink);
+    border-radius:11px;padding:9px 12px;font-size:13px;font-weight:600;
+    display:flex;align-items:center;gap:6px;cursor:pointer;backdrop-filter:blur(8px);
+  }
+  .tbtn:active{transform:scale(.96)}
+  .tbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  #title{
+    flex:1;min-width:0;font-size:13px;font-weight:700;letter-spacing:.02em;
+    color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding-left:2px;
+  }
+  #title b{color:var(--accent)}
+
+  /* ---------- BOTTOM SHEET ---------- */
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:700;
+    height:86vh;max-height:86vh;
+    background:var(--panel);
+    border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+    transform:translateY(calc(100% - var(--sheet-peek)));
+    transition:transform .34s cubic-bezier(.32,.72,0,1);
+    display:flex;flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  #sheet.open{transform:translateY(0)}
+  #sheet.hidden{transform:translateY(100%)}
+  #grab{padding:9px 0 4px;display:flex;justify-content:center;cursor:grab;flex:0 0 auto}
+  #grab i{display:block;width:42px;height:4px;border-radius:2px;background:#4b453c}
+
+  #sheethead{flex:0 0 auto;padding:2px 18px 10px;cursor:pointer}
+  #sheetnum{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:24px;height:24px;padding:0 6px;border-radius:7px;
+    background:var(--accent);color:var(--accent-ink);
+    font-size:12px;font-weight:800;margin-right:9px;vertical-align:3px;
+  }
+  #sheettitle{display:inline;font-size:20px;font-weight:750;letter-spacing:-.01em}
+  #sheetsub{margin-top:5px;font-size:12.5px;color:var(--ink-dim);font-weight:500}
+  #sheetsub .sep{opacity:.4;margin:0 6px}
+
+  #controls{
+    flex:0 0 auto;display:flex;gap:7px;padding:0 18px 12px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+  }
+  .cbtn{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+  }
+  .cbtn:active{transform:scale(.96)}
+  .cbtn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .cbtn:disabled{opacity:.4;cursor:default}
+  .cbtn.ghost{background:transparent}
+
+  #body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px 34px}
+  #body p{margin:0 0 12px}
+  #body h4{
+    margin:20px 0 8px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--accent);font-weight:800;
+  }
+  #body ul{margin:0 0 12px;padding-left:19px}
+  #body li{margin-bottom:7px}
+  #body em{color:var(--ink-dim);font-style:italic}
+  #body strong{color:#fff;font-weight:680}
+  .box{
+    border-radius:12px;padding:11px 13px;margin:0 0 14px;font-size:14.5px;line-height:1.5;
+    background:var(--panel-2);border-left:3px solid var(--line);
+  }
+  .box .lbl{
+    display:block;font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+    font-weight:800;margin-bottom:5px;
+  }
+  .box.legend{border-left-color:var(--legend);background:#242034}
+  .box.legend .lbl{color:#b6a6e0}
+  .box.heads{border-left-color:#c9683f;background:#2c221c}
+  .box.heads .lbl{color:#e39268}
+  .box.walk{border-left-color:#5b9a6b;background:#1e2721}
+  .box.walk .lbl{color:#8fcba0}
+  #body .srcs{font-size:11.5px;color:#7d766b;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  #body .srcs a{color:#9a9184}
+
+  /* ---------- STOP LIST ---------- */
+  #list{
+    position:fixed;inset:0;z-index:800;background:var(--bg);
+    display:none;flex-direction:column;
+    padding-top:env(safe-area-inset-top);
+  }
+  #list.show{display:flex}
+  #listhead{
+    padding:14px 18px 12px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;flex:0 0 auto;
+  }
+  #listhead h2{margin:0;font-size:17px;font-weight:750;flex:1}
+  #listhead p{margin:3px 0 0;font-size:12px;color:var(--ink-dim);font-weight:500}
+  #listitems{flex:1 1 auto;overflow-y:auto;padding:6px 0 40px}
+  .li{
+    display:flex;gap:13px;align-items:flex-start;padding:13px 18px;
+    border-bottom:1px solid #262320;cursor:pointer;
+  }
+  .li:active{background:var(--panel-2)}
+  .li .n{
+    flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    border:2px solid var(--accent);font-size:12px;font-weight:800;margin-top:1px;
+  }
+  .li.done .n{background:var(--accent);color:var(--accent-ink)}
+  .li.opt .n{border-style:dashed;border-color:var(--ink-dim);color:var(--ink-dim)}
+  .li .t{flex:1;min-width:0}
+  .li .t b{display:block;font-size:15px;font-weight:650}
+  .li .t span{display:block;font-size:12px;color:var(--ink-dim);margin-top:2px}
+
+  /* ---------- INTRO / HELP OVERLAY ---------- */
+  #intro{
+    position:fixed;inset:0;z-index:900;background:rgba(12,11,9,.96);
+    display:flex;align-items:center;justify-content:center;padding:22px;
+    overflow-y:auto;
+  }
+  #intro.hide{display:none}
+  .card{
+    max-width:520px;width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:18px;padding:24px 22px;
+  }
+  .card h1{margin:0 0 4px;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+  .card .kicker{color:var(--accent);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;margin-bottom:9px}
+  .card p{margin:0 0 12px;font-size:14.5px;color:#ded7cb}
+  .card ul{margin:0 0 14px;padding-left:19px;font-size:14px;color:#ded7cb}
+  .card li{margin-bottom:6px}
+  .card .go{
+    width:100%;background:var(--accent);color:var(--accent-ink);border:0;
+    border-radius:12px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;margin-top:4px;
+  }
+  .card .go:active{transform:scale(.98)}
+  .stat{display:flex;gap:18px;margin:0 0 16px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .stat div{flex:1}
+  .stat b{display:block;font-size:19px;font-weight:800;color:var(--accent)}
+  .stat span{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+
+  #toast{
+    position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 62px);transform:translateX(-50%);
+    z-index:850;background:rgba(40,37,32,.97);border:1px solid var(--line);
+    color:var(--ink);border-radius:11px;padding:10px 15px;font-size:13px;font-weight:600;
+    max-width:88vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;
+    backdrop-filter:blur(8px);
+  }
+  #toast.show{opacity:1}
+
+  @media (min-width:820px){
+    #sheet{left:auto;right:14px;bottom:14px;top:74px;width:430px;height:auto;max-height:none;border-radius:16px;border:1px solid var(--line);transform:none}
+    #sheet.hidden{transform:translateX(120%)}
+    :root{--sheet-peek:0px}
+    #grab{display:none}
+    #sheethead{padding-top:16px;cursor:default}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <button class="tbtn" id="btnList">☰ Stops</button>
+  <div id="title"></div>
+  <button class="tbtn" id="btnLocate">◎ Locate</button>
+</div>
+
+<div id="sheet">
+  <div id="grab"><i></i></div>
+  <div id="sheethead">
+    <span id="sheetnum">1</span><h3 id="sheettitle">Karlstor</h3>
+    <div id="sheetsub"></div>
+  </div>
+  <div id="controls">
+    <button class="cbtn primary" id="btnSpeak">▶ Listen</button>
+    <button class="cbtn ghost" id="btnPrev">← Prev</button>
+    <button class="cbtn ghost" id="btnNext">Next →</button>
+    <button class="cbtn ghost" id="btnDone">✓ Visited</button>
+  </div>
+  <div id="body"></div>
+</div>
+
+<div id="list">
+  <div id="listhead">
+    <div style="flex:1">
+      <h2>The route</h2>
+      <p id="listmeta"></p>
+    </div>
+    <button class="tbtn" id="btnCloseList">✕</button>
+  </div>
+  <div id="listitems"></div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <div class="kicker" id="iKicker">A self-guided walk</div>
+    <h1 id="iTitle">City Walking Tour</h1>
+    <p id="iBlurb"></p>
+    <div class="stat">
+      <div><b id="sN">–</b><span>Stops</span></div>
+      <div><b id="sKm">–</b><span>Kilometres</span></div>
+      <div><b id="sHrs">–</b><span>Hours</span></div>
+    </div>
+    <ul>
+      <li><b>Tap a numbered pin</b> or use ☰ Stops to read about it.</li>
+      <li><b>◎ Locate</b> puts a blue dot on the map and follows you.</li>
+      <li><b>▶ Listen</b> reads the text aloud using your phone's voice.</li>
+      <li>Drag the panel down to see more map, up to read more.</li>
+    </ul>
+    <p id="iTip" style="font-size:13px;color:#a9a196;display:none"></p>
+    <button class="go" id="btnStart">Start the walk</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   STOP DATA  —  injected below
+   ============================================================ */
+const TOUR = {
+  city:       "M\u00fcnster",
+  subtitle:   "Altstadt \u2014 the short loop",
+  title:      "M\u00fcnster: Altstadt in an Hour",
+  kicker:     "A self-guided walk from the Hauptbahnhof",
+  blurb:      "A loop from the station into the oldest ground in Westphalia and back. It runs inward through time \u2014 the bombed and rebuilt city of the 1950s, the prince-bishops' baroque, the merchants' market square, the cages of the Anabaptist kings, the hill where a Frisian monk founded the place in 793 \u2014 then out again to the green ring where the walls used to be.",
+  hours:      "1",
+  tip:        "Time it to reach the cathedral just before <b>12 noon</b>: that is the one moment each day the astronomical clock's Three Kings come out. The Friedenssaal in the town hall is <b>closed on Mondays</b>. And if you are still in town at 9pm, the tower keeper of St Lamberti sounds her horn every half hour until midnight \u2014 every evening except Tuesday.",
+  storageKey: "muenster-altstadt-tour"
+};
+
+/* ============================================================
+   STOP DATA
+   ------------------------------------------------------------
+   One object per stop, in walking order. Full schema:
+
+   {
+     name:      "Stop name",                  // required
+     era:       "Gothic, 1468",               // short line under the title
+     walk:      "250 m \u00b7 3 min",              // distance from the previous stop
+     lat: 0.0, lon: 0.0,                      // required, decimal degrees
+     optional:  true,                         // omit for normal stops; optional ones
+                                              // are excluded from the route line,
+                                              // distance total and stop count
+     walk_note: "Turn left at ... <b>bold</b>",  // green box: how to get here / where to stand
+     blocks: [                                // the main narration, in order
+       { h:"Section heading",                 // all keys optional
+         p:["paragraph <b>html</b>", "..."],
+         list:["bullet", "..."],
+         legend:"purple box: a story that is NOT documented fact",
+         heads:"orange box: closure or disruption at time of writing"
+       }
+     ],
+     look: ["what to physically look at", "..."],   // rendered as 'Look for'
+     practical: "hours, prices, access",            // grey box at the end
+     sources: [{t:"Source name", url:"https://..."}]
+   }
+
+   Inline HTML allowed in every string: <b> <i> <a>. Keep <b> for the
+   thing a reader would want to remember; don't bold whole sentences.
+   ============================================================ */
+const STOPS = [
+
+  /* ---- 1 ---- */
+  {
+    name: "Münster Hauptbahnhof",
+    era: "Start · the city that decided how to come back",
+    walk: "You are here",
+    lat: 51.956936, lon: 7.634926,
+    walk_note: "Leave by the <b>west exit</b>, towards the city. You want <b>Windthorststraße</b>, running straight ahead away from the station. Read this before you set off.",
+    blocks: [
+      { p: [
+        "Almost nothing you are about to see is as old as it looks, and almost everything is exactly where it has always been. That is the single fact that explains Münster.",
+        "Between 1940 and 1945 the city absorbed something on the order of <b>a hundred air raids</b>. The medieval core was around <b>91 per cent</b> destroyed; the city as a whole roughly 60 per cent. In terms of what the bombs took, Münster belongs in the same sentence as Dresden, Cologne and Kassel. In 1945 the old town was a field of cellars with a few arcade arches standing up out of it.",
+        "What happened next was a choice, and not the obvious one. Across West Germany, ruined cities mostly treated the rubble as an opportunity: widen the streets, straighten them, build for the car. Kassel did exactly that. Münster refused. The old property lines, the old cellars, the old crooked plan were kept, and new houses were built on top of them with gables facing the street, as before. Not copies — the gables were simplified, the windows enlarged — but the <i>shape</i> of the place was deliberately put back."
+      ]},
+      { h: "What this walk does",
+        p: [
+          "The route runs inward through time and then out again. From this 19th-century railway suburb you walk into the prince-bishops' baroque quarter of the 1750s, then the merchants' market street of the 1300s, then the church tower where three corpses hung in cages in 1536, then the low hill in the middle where a Frisian monk started the whole thing in <b>793</b>. Then back out to the green ring that replaced the city walls.",
+          "One more thing to notice from the first minute: the bicycles. Münster calls itself Germany's cycling capital and has the numbers to back it — the 2025 Copenhagenize index ranked it seventh in the world. On the ring road you will be outnumbered by <i>Leezen</i>, the local word for a bike. Look before you step off a kerb; the cyclists here have right of way and know it."
+        ]
+      }
+    ],
+    look: [
+      "The direction of travel: the cathedral towers are just visible over the rooftops to the west-north-west",
+      "Bike parking volume at the station forecourt — thousands of spaces, and usually full"
+    ],
+    practical: "Toilets and food in the station; this is the last easy stop for both until you reach the Prinzipalmarkt.",
+    sources: [
+      { t: "Prinzipalmarkt — baukunst-nrw", url: "https://www.baukunst-nrw.de/objekte/Prinzipalmarkt-Muenster--244.htm" },
+      { t: "NZZ: Der Charme einer neuen Altstadt", url: "https://www.nzz.ch/der_charme_einer_neuen_altstadt_in_muenster-ld.774814" },
+      { t: "Stadt Münster: Copenhagenize 2025", url: "https://www.stadt-muenster.de/tiefbauamt/pressemeldungen" }
+    ]
+  },
+
+  /* ---- 2 ---- */
+  {
+    name: "Erbdrostenhof",
+    era: "Late baroque, 1753–57 · Johann Conrad Schlaun",
+    walk: "900 m · 11 min",
+    lat: 51.960885, lon: 7.632160,
+    walk_note: "Straight down <b>Windthorststraße</b>, across the busy ring at <b>Servatiiplatz</b> — this is the line of the old city wall, and you will come back to it at the end — then bear right into pedestrianised <b>Salzstraße</b>. The Erbdrostenhof is set back on your left, behind iron railings. Stand in the street, not the courtyard: the whole design is meant to be seen from here.",
+    blocks: [
+      { p: [
+        "This is a building doing something slightly outrageous with a bad plot of land. The site is a rectangle. The palace is set on it <b>diagonally</b>, corner-on to the street, so that a cramped patch becomes a wide theatrical frontage with a triangular courtyard of honour in front of it. It is a conjuring trick, and it works.",
+        "It was built between 1753 and 1757 for Adolf Heidenreich, Baron Droste zu Vischering, who held the office of <i>Erbdroste</i> — the hereditary chief administrator of the prince-bishop of Münster. That title is the key to this whole quarter. Münster was not a free city. It was the capital of an ecclesiastical principality, ruled by a bishop who was also a sovereign prince, and the regional nobility kept town palaces here to be near him. There are dozens of these <i>Adelshöfe</i> in Münster. This is the best.",
+        "The architect, <b>Johann Conrad Schlaun</b>, is the single most important name in the look of this city, and he will follow you around for the rest of the walk. His signature is right in front of you: warm red brick for the mass of the wall, pale Baumberg sandstone for everything that frames or carries — window surrounds, pilasters, the crowning cornice. Once you have seen that red-and-cream pairing you will spot it repeatedly."
+      ]},
+      { h: "And then 1943",
+        p: [
+          "The bombs left the façade and took everything behind it. What you are looking at is genuinely 18th-century stone; the rooms are a reconstruction carried out for the regional authority between 1953 and 1970, with the interior frescoes restored in the mid-1960s. The family still owns it. It is an office building with a very good front."
+        ]
+      }
+    ],
+    look: [
+      "The diagonal: sight along the railings and you can see the building is turned about 45° to its own plot",
+      "The concave–convex curve of the central block — the wall bends in and out rather than running flat",
+      "Red brick versus pale sandstone: Schlaun's two-material habit, stated plainly",
+      "The wrought-iron screen closing off the forecourt"
+    ],
+    practical: "Only the foyer is open to visitors, on weekday mornings (roughly 8:30 to mid-afternoon, Mon–Thu; closed weekends). The grand hall upstairs is for booked groups and concerts. The exterior is the point, and it is free at any hour.",
+    sources: [
+      { t: "Stadt Münster: Erbdrostenhof", url: "https://www.stadt-muenster.de/tourismus/sehenswertes/altstadt/erbdrostenhof.html" },
+      { t: "LWL Erbdrostenhof", url: "https://www.erbdrostenhof.lwl.org/de/wissenswertes-zum-erbdrostenhof/" },
+      { t: "Deutsche Stiftung Denkmalschutz", url: "https://www.denkmalschutz.de/denkmal/erbdrostenhof.html" }
+    ]
+  },
+
+  /* ---- 3 ---- */
+  {
+    name: "Clemenskirche",
+    era: "Baroque rotunda, 1745–53 · Schlaun again",
+    walk: "120 m · 2 min",
+    lat: 51.960765, lon: 7.630942,
+    walk_note: "Continue a few steps along Salzstraße and turn left into the little street <b>An der Clemenskirche</b>. The domed church is immediately on your left, with its bell tower standing apart from it.",
+    blocks: [
+      { p: [
+        "Same architect, same decade, same two materials — and a completely different problem. At the Erbdrostenhof Schlaun had to make a mansion look grand on a mean site. Here he had to make a small hospital chapel feel like Rome.",
+        "He more or less did. The plan is an irregular hexagon; the front swells and recedes in a shallow curve; there is a dome with a lantern on top, and the bell tower is detached and treated as an Italian <i>campanile</i> rather than attached as a German tower. Schlaun had studied in Italy, and this is him importing Roman baroque wholesale into a rainy Westphalian side street. It is generally reckoned the <b>most important baroque church in north-west Germany</b>.",
+        "It was built for the Brothers of Mercy, who ran the monastery and hospital next door — which is why it sits sideways in a lane instead of commanding a square. The ceiling paintings inside are by Johann Adam Schöpf. Together with the Erbdrostenhof behind you and the Dominican church further up Salzstraße, these buildings are known locally as the <b>Barockinsel</b>, the baroque island: three set pieces of the 1750s inside two minutes' walk."
+      ]},
+      { h: "The pattern repeats",
+        p: [
+          "Bombed, burnt out, rebuilt. By now you may be noticing that this is the caption on nearly every label in Münster. It is worth holding on to as you go: the city's continuity is real, but it is a continuity of ground plan and intention rather than of untouched fabric.",
+          "It is also worth asking why a small principality on the north German plain was building like this at all in the 1750s. The answer is the office you met at the last stop. The prince-bishop was a sovereign, his court needed the architecture of sovereignty, and the money came from a large agricultural territory that had been left more or less alone for a century. Schlaun spent that money for three successive rulers, and this street is where he spent it most densely.",
+          "He is buried a few streets away in the Überwasserkirche. He died in 1773, with his last and largest commission — the prince-bishop's palace — still going up on the far side of the old town, on ground you will hear about at the final stop."
+        ]
+      }
+    ],
+    look: [
+      "The curve of the front wall — stand square to it and watch the wall bend away from you",
+      "The free-standing bell tower, deliberately not part of the church",
+      "The dome and lantern from the lane; then step inside for the painted ceiling if it is open",
+      "Sandstone frames set into brick, exactly as at the last stop"
+    ],
+    practical: "Free entry when open, and it is usually open in the daytime. Small, so two or three minutes inside is enough.",
+    sources: [
+      { t: "Stadt Münster: Barockfest — Spielorte", url: "http://www.muenster.de/stadt/barockfest/spielorte.htm" },
+      { t: "Schlaun in Münster — kulturreise-ideen", url: "https://www.kulturreise-ideen.de/architektur/architekten/Tour-johann-conrad-schlaun-in-muenster.html" }
+    ]
+  },
+
+  /* ---- 4 ---- */
+  {
+    name: "Prinzipalmarkt & the Historic Town Hall",
+    era: "Gothic gable, c.1340s · the peace of 1648",
+    walk: "300 m · 4 min",
+    lat: 51.961636, lon: 7.628021,
+    walk_note: "Back onto Salzstraße and keep going west until the street opens into a long curving market street lined with gabled houses and arcades. The town hall is the tall openwork gable on the <b>west side</b>, with the smaller Stadtweinhaus beside it. Stand across the street from it so you can see the whole gable.",
+    blocks: [
+      { p: [
+        "The Prinzipalmarkt is the reason people photograph Münster, and it is also the city's most interesting piece of honesty. Merchants have traded along this line since about <b>1280</b>. The arcades at ground level are medieval in idea — a covered walkway in front of the shops, because this is a wet part of Germany.",
+        "But look along the roofline. The gables are a little too regular. The eaves line up too well, the windows are broader than a 16th-century mason would have dared, the stepped and triangular gables are crisp where they should be fussy. In 1945 this street was gone — essentially <b>100 per cent</b> destroyed, a few arcade arches excepted. Rebuilding began within months, on the surviving cellars and the old plot boundaries, and only two things here were reconstructed accurately: the front of the town hall and the front of the Stadtweinhaus next to it. Everything else is a 1950s new building wearing the right silhouette.",
+        "At the time this infuriated architects, who called it a masquerade and worse. It is now widely regarded as one of the more successful decisions in postwar German planning. Both views are defensible while you stand here."
+      ]},
+      { h: "The Friedenssaal",
+        p: [
+          "Behind that gable is a panelled room from <b>1577</b> where, on <b>15 May 1648</b>, Spanish and Dutch envoys swore to a peace ending eighty years of war. That treaty is the founding document of the modern Netherlands, and the room has been called the Friedenssaal — the Hall of Peace — ever since the 18th century. On the walls hang 37 portraits of the sovereigns and envoys involved; the council bought the set in 1649, the year after.",
+          "The room you can visit is a faithful postwar rebuild of a room that was destroyed. The flags displayed here did survive the war."
+        ],
+        legend: "It is repeated everywhere that the Peace of Westphalia was negotiated and signed in this hall. It was not. The congress ran for five years in Münster and Osnabrück, with the real bargaining done in the envoys' private lodgings around town. What happened in this room on 15 May 1648 was the Spanish–Dutch peace, sworn by exchanging signed copies. The treaty that ended the Thirty Years' War was concluded on 24 October 1648 — not in the Friedenssaal."
+      },
+      { h: "Also on this pavement",
+        p: [
+          "On <b>22 January 1536</b>, three men were tortured to death in front of this building in view of a large crowd. You will hear who they were at the next stop, which is where their bodies went."
+        ],
+        heads: "The Friedenssaal is closed on Mondays. Otherwise roughly Tue–Fri 10:00–17:00 and Sat/Sun/holidays 10:00–16:00, for a couple of euros, with an audio guide. Hours change — check the door. If you are on the hour budget, admire the gable and skip the interior."
+      }
+    ],
+    look: [
+      "The town hall gable: openwork stone tracery with nothing behind it, a screen rather than a wall",
+      "The Stadtweinhaus immediately to its right — the only other accurate façade on the street",
+      "How the eaves heights match from house to house: the giveaway that this is one 1950s project, not thirty medieval ones",
+      "The arcades themselves, and the way they make the street usable in rain"
+    ],
+    practical: "Cafés, bakeries and toilets along the arcades. This is the natural place to break if you want one.",
+    sources: [
+      { t: "Stadt Münster: Friedenssaal", url: "https://www.stadt-muenster.de/g7/friedenssaal" },
+      { t: "Historisches Rathaus Münster — Wikipedia", url: "https://de.wikipedia.org/wiki/Historisches_Rathaus_M%C3%BCnster" },
+      { t: "Stadt Münster: Denkmalpflege — Prinzipalmarkt", url: "https://www.stadt-muenster.de/denkmalpflege/denkmalschutz/denkmalbereiche/prinzipalmarkt" },
+      { t: "LWL: Das neue alte Münster", url: "https://www.lwl.org/lmz-download/medienproduktion/begleitmaterialien/Booklet_Neue_alte_Muenster.pdf" }
+    ]
+  },
+
+  /* ---- 5 ---- */
+  {
+    name: "St. Lamberti & the three cages",
+    era: "Hall church from 1375 · tower 1890s · cages 1536",
+    walk: "200 m · 3 min",
+    lat: 51.962935, lon: 7.628904,
+    walk_note: "Walk north along the Prinzipalmarkt to the church closing the top end of the street. Go round to the <b>south side of the tower</b> and look up, high, above the clock. Three iron baskets are bolted to the stonework.",
+    blocks: [
+      { p: [
+        "In February 1534 the city government of Münster was taken over by Anabaptists — radical reformers who held that infant baptism was worthless and that the end of the world was imminent. Within weeks the city was declared the New Jerusalem. Adults were given a choice: be rebaptised or leave. Property was pooled. The city archive was destroyed, which is why Münster's early records are patchy to this day.",
+        "The prince-bishop, Franz von Waldeck, put a siege ring around his own capital. Inside, the prophet Jan Matthys announced that Christ would appear at Easter 1534; when nothing happened, he rode out against the besiegers and was killed. Leadership passed to a 25-year-old Dutch tailor, <b>Jan van Leiden</b>, who had himself proclaimed king in September 1534, held court in imitation of a real one, legalised polygamy while making adultery a capital offence, and personally beheaded one of his own wives, Elisabeth Wandscherer, in June 1535 after she criticised his luxury.",
+        "The city fell by betrayal on <b>25 June 1535</b> after roughly sixteen months of siege. Some 650 defenders died. Jan van Leiden, Bernd Knipperdolling and Bernd Krechting were held, interrogated for months, sentenced on 6 January 1536 and killed on the market square you have just left. Then their bodies were put into three iron baskets and hauled up this tower, where they stayed on view for decades."
+      ]},
+      { h: "The cages are still there",
+        p: [
+          "They are visible from the pavement, and the tower is not the one they were first hung on: the medieval tower had been raised so often that it began leaning west and was pulled down in 1881. The baskets came off in December 1881, and went back up on <b>22 September 1898</b>, on the south face of the new tower — a 90.5-metre neo-Gothic spire modelled on Freiburg's, by the Münster architect Hilger Hertel. Whether to rehang them at all was publicly argued over at the time."
+        ],
+        legend: "The persistent claim that the cages up there are replicas and the originals sit in the city museum is false, and traceable to a single 19th-century local figure, the zoologist Hermann Landois, who apparently started the rumour. The city magistrate did want to swap them for copies when the new tower was finished — and was forbidden to by the Prussian government. Separately: Jan van Leiden is said to have told the bishop, when reproached with the cost of retaking the city, to have an iron cage forged and charge a penny a look, and he would turn a profit. Whether that quip inspired the actual baskets cannot be established."
+      },
+      { h: "The woman at the top",
+        p: [
+          "A tower keeper has been documented here since <b>1383</b>. The job was to watch for fires and approaching troops and to sound the hours at night — and, historically, to dispose of body parts after executions, which is one reason the post carried a stigma. Münster still employs one. Since January 2014 the office has been held by a woman, the first since the records begin; she is a city employee, not a church one, climbs about 300 steps, and sounds a copper horn every half hour from 21:00 to midnight, every evening but Tuesday. One note only — a low C."
+        ],
+        legend: "She sounds the horn to three points of the compass but never east. One story says a graveyard lay that way and the dead should not be disturbed; another says a rich man out there wanted quiet. Neither is documented."
+      }
+    ],
+    look: [
+      "Three cages, south face of the tower, above the clock — the middle one held Jan van Leiden and is slightly larger",
+      "After dark, a small light burning in each cage: an art installation from 1987, not a memorial the city commissioned in the 16th century",
+      "The tower's openwork stone spire — you can see daylight through the tracery",
+      "Above the west door, the little sandstone figure of a night watchman marking the tower keeper's entrance"
+    ],
+    practical: "The church is normally open in the daytime and free. You cannot climb the tower: the keeper's room is a workplace, not a viewing platform, and there are no public tours of it.",
+    sources: [
+      { t: "Stadtmuseum Münster: Das Königreich der Täufer", url: "https://www.stadt-muenster.de/museum/museum/33-kabinette/1-obergeschoss/7-das-koenigreich-der-taeufer" },
+      { t: "MünsterWiki: Wiedertäufer-Käfige", url: "https://wiki.muenster.org/index.php/Wiedert%C3%A4ufer-K%C3%A4fige" },
+      { t: "MünsterWiki: St. Lamberti-Kirche", url: "https://wiki.muenster.org/index.php/St._Lamberti-Kirche" },
+      { t: "MünsterWiki: Martje Saljé", url: "https://wiki.muenster.org/index.php/Martje_Salj%C3%A9" }
+    ]
+  },
+
+  /* ---- 5a (optional) ---- */
+  {
+    name: "Kiepenkerl",
+    era: "1896 · destroyed 1945 · recast 1953",
+    walk: "Detour: 250 m · 4 min there and back",
+    lat: 51.964151, lon: 7.626193,
+    optional: true,
+    walk_note: "Optional. From St. Lamberti head north-west along <b>Bergstraße</b> into the small square at the Spiekerhof. The bronze pedlar stands in the middle, usually with tables around him.",
+    blocks: [
+      { p: [
+        "A <i>Kiepenkerl</i> was a travelling pedlar who carried Münsterland produce into the city on his back in a wicker pannier — the <i>Kiepe</i> — and sold it door to door. They worked these roads from the 15th century onwards. In 1896 a local beautification society had one cast in effigy: smock, neckerchief, cap, knotted stick, pipe.",
+        "Then the statue had a war. It came through the heavy raid of <b>10 October 1943</b> standing upright in a field of burning rubble, and a photograph of exactly that was turned into a Nazi propaganda poster in 1944, over a line of Westphalian dialect meaning roughly <i>we stand firm</i>. Months later, when American troops entered the city, the statue was knocked down by a tank. The association the propaganda had built may well have been the reason.",
+        "It was recast and put back on the same spot in 1953, with the first President of the Federal Republic, Theodor Heuss, present. Of everything on this walk, this small bronze is the neatest summary of the city's 20th century: survival used as propaganda, then destroyed for it, then quietly restored."
+      ]},
+      { h: "Small correction",
+        p: [
+          "Guidebooks and even some encyclopaedias say the 1896 original was carved from Baumberg sandstone. Münster's own city museum records it as a <b>plaster figure with a metal galvanic coating</b>, made for 2,960 marks — which also explains why a tank was so comprehensively the end of it."
+        ]
+      }
+    ],
+    look: [
+      "The pannier basket on his back and the pipe in his hand",
+      "How low he is — only about 1.75 m, life size, deliberately not heroic",
+      "The 1950s houses ringing the square, gabled to match what stood here before"
+    ],
+    sources: [
+      { t: "Stadtmuseum Münster: Das Kiepenkerldenkmal", url: "https://magazin.stadtmuseum-muenster.de/ereignisse/1953-das-kiepenkerldenkmal" },
+      { t: "Kiepenkerl (Münster) — Wikipedia", url: "https://de.wikipedia.org/wiki/Kiepenkerl_(M%C3%BCnster)" },
+      { t: "MünsterWiki: August Schmiemann", url: "https://wiki.muenster.org/index.php/August_Schmiemann" }
+    ]
+  },
+
+  /* ---- 6 ---- */
+  {
+    name: "Domplatz & St.-Paulus-Dom",
+    era: "Founded 793 · this building 1225–1264",
+    walk: "250 m · 3 min",
+    lat: 51.962906, lon: 7.626000,
+    walk_note: "Head west off the Prinzipalmarkt into the large open square. Walk to the <b>south side</b> of the cathedral and go in through the deep vaulted porch called the <b>Paradies</b>. Inside, turn towards the choir and follow the ambulatory round to the right until you find the painted clock.",
+    blocks: [
+      { p: [
+        "This is where Münster starts. There was a Saxon farming settlement here called <b>Mimigernaford</b> — the ford of Mimigern's people — on a low rise above the little river Aa. A ford is the answer to a geographic question, and it is the reason for everything else.",
+        "In <b>793</b> a Frisian missionary named Liudger, working for Charlemagne in newly conquered Saxony, founded a monastery on this rise. The Latin for monastery is <i>monasterium</i>. Say it a few times and you have the name of the city. Liudger became its first bishop in about 805, the cathedral precinct was fortified as a <i>Domburg</i>, merchants and craftsmen settled outside the walls of it, and the market street you just walked up grew out of that.",
+        "The building itself is the third cathedral on the site. The foundation stone was laid in <b>1225</b> and it was consecrated on 30 September <b>1264</b> — a forty-year job, commissioned not by the bishop but by the cathedral chapter, which by then had the money and the confidence. The two nearly identical west towers are older still, from about 1192, absorbed from the previous church. The result is a building that changes its mind about style halfway through: heavy late Romanesque going Gothic as it moves east."
+      ]},
+      { h: "The astronomical clock",
+        p: [
+          "Do not leave without finding this. There was a clock here from 1408; the Anabaptists smashed it in the iconoclasm of 1534 along with the sculpture, the reliquaries and a 12th-century silver cross. What you see was built to replace it in <b>1540–42</b>, and it survived.",
+          "The mathematics is by the printer Dietrich Tzwyvel and a Franciscan preacher, Johann von Aachen; the ironwork by the locksmith Nikolaus Windemaker; the paintings by Ludger tom Ring the Elder. It shows the positions of the planets, the phase of the moon, and a perpetual calendar originally calculated to run to <b>2071</b> — knocked out of true by the Gregorian calendar reform of 1582, which deleted ten days and broke the Easter tables.",
+          "Two things make it strange. It has <b>no minute hand</b>. And the hand runs <b>anticlockwise</b>, following the sun's apparent path across the southern sky, which is what a clock face meant before the convention settled. It is one of very few surviving large public clocks that turn the wrong way, and it belongs to a family of Hanseatic clocks of which only a handful — Gdańsk, Rostock, Stralsund, Stendal — survive in anything like original condition."
+        ]
+      },
+      { h: "1943, and the wall with no door",
+        p: [
+          "The cathedral was gutted. The vaults and walls came down, taking with them the 16th-century wall paintings by Hermann tom Ring and the great late-Gothic west portal. The movable treasures had been evacuated in time and survived.",
+          "Rebuilding ran from 1946 to 1956, and it is close to the original with one deliberate, visible exception: the west portal was <b>not</b> replaced. Where the main door used to be there is now a plain wall pierced by twelve round windows in a circle. When the cathedral was reconsecrated in October 1956 — a festival week that drew more than a hundred thousand people — some spoke of a fourth cathedral rather than a repaired third one.",
+          "Also inside, near the clock, is the burial chapel of <b>Clemens August Graf von Galen</b>, bishop here from 1933, who preached openly against the Nazi killing of disabled people in 1941 and was widely known as the Lion of Münster. He was not arrested; the regime calculated that arresting him would cost more than tolerating him."
+        ],
+        heads: "There is building work around the Domplatz: the Freiherr-von-Vincke-Haus on its edge is being converted into the seat of the NRW constitutional court, and the Domgasse alongside it was closed to traffic in summer 2026 and resurfaced. Expect hoardings and a diverted footpath on the north-east side of the square. The cathedral itself is unaffected."
+      }
+    ],
+    look: [
+      "The clock's twelve o'clock show: metal Magi and two wooden servants emerge and circle the Virgin — once a day, at noon",
+      "On the quarter hour, Death striking the bell while winged Chronos turns an hourglass",
+      "Ludger tom Ring painted himself into the clock's gable scene, in a red cloak and black beret, among the citizens looking at the Virgin",
+      "The blank west wall from outside, with its ring of twelve circular windows where the portal used to be",
+      "The colossal St Christopher on a pier in the west end",
+      "Out on the square: the ground rises slightly. That rise is the reason the city is here"
+    ],
+    practical: "The cathedral is free to enter and generally open all day, closed to sightseers during services (usually around 7:00, 9:00 and 12:15). The chimes are on the hour and quarter hour; the full figure show is at 12 noon only. Allow five minutes here even if you are rushing.",
+    sources: [
+      { t: "Paulusdom: Geschichte", url: "https://www.paulusdom.de/gotteshaus/geschichte" },
+      { t: "St.-Paulus-Dom — Wikipedia", url: "https://de.wikipedia.org/wiki/St.-Paulus-Dom_(M%C3%BCnster)" },
+      { t: "Watch-Wiki: Astronomische Uhr im Dom", url: "https://watch-wiki.org/index.php?title=Astronomische_Uhr_im_Dom_von_M%C3%BCnster" },
+      { t: "Stadt Münster: Stadtgeschichte seit 793", url: "https://www.stadt-muenster.de/museum/museum/stadtgeschichte-seit-793" },
+      { t: "Baustelle am Domplatz (July 2026)", url: "https://ms-aktuell.de/muenster/baustelle-am-domplatz-domgasse-wird/" }
+    ]
+  },
+
+  /* ---- 6a (optional) ---- */
+  {
+    name: "St. Ludgeri",
+    era: "Romanesque core, from c.1180",
+    walk: "Detour: 700 m · 9 min, on the way back",
+    lat: 51.958096, lon: 7.626946,
+    optional: true,
+    walk_note: "Optional, and it fits neatly into the return leg: from the cathedral walk south down the Prinzipalmarkt and straight on into <b>Ludgeristraße</b>, then Königsstraße. The church has a stubby crossing tower and no spire.",
+    blocks: [
+      { p: [
+        "Named for the same Liudger who founded the place in 793, this is one of the four parish churches the bishops planted around the edges of the growing town in the later 12th century — St Aegidii to the south-west, St Ludgeri to the south, St Servatii to the south-east, St Martini to the north-east. First documented in <b>1173</b>; the present building went up from around 1180 and was finished about 1220. The nave and aisles you stand in are substantially that building, which makes this some of the oldest fabric on the walk.",
+        "It is also one of the earliest hall churches in the Münsterland — aisles the same height as the nave, no clerestory, a wide even space rather than a tall central one. That form spread across this region and you have already seen its late flowering at St Lamberti.",
+        "Then the city fire of <b>1383</b>. The church was rebuilt with a much taller choir, which meant raising the roof, which meant raising the crossing tower — so a Romanesque tower of two storeys got a Gothic third storey with tracery windows stacked on top. You can read the join from outside: round-headed twin windows below, pointed arches above."
+      ]},
+      { h: "One more Anabaptist casualty",
+        p: [
+          "Inside is a font of about 1500, cut from Baumberg limestone as an eight-sided cup with eight biblical scenes around it. It is the oldest surviving artwork belonging to this church, and it was damaged in the 1530s by the same people whose bodies you saw hanging in cages."
+        ]
+      }
+    ],
+    look: [
+      "The crossing tower from outside: Romanesque below, Gothic above, the seam clearly visible",
+      "Liudger himself, carved in the tympanum over the west door",
+      "The octagonal font and its eight carved scenes"
+    ],
+    practical: "Usually open daytime, roughly from mid-morning to early evening, and free.",
+    sources: [
+      { t: "St. Ludgeri (Münster) — Wikipedia", url: "https://de.wikipedia.org/wiki/St._Ludgeri_(M%C3%BCnster)" },
+      { t: "baukunst-nrw: St. Ludgeri", url: "https://www.baukunst-nrw.de/objekte/St.-Ludgeri-in-Muenster--772.htm" }
+    ]
+  },
+
+  /* ---- 7 ---- */
+  {
+    name: "The Promenade at Servatiiplatz",
+    era: "Walls from c.1200 · demolished from 1764 · lime avenue from 1770",
+    walk: "950 m · 12 min",
+    lat: 51.959763, lon: 7.634581,
+    walk_note: "Back east along Salzstraße the way you came, all the way to the busy junction at <b>Servatiiplatz</b>. Stand where the tree-lined path crosses the road. This is your last stop; the station is straight on down Windthorststraße, about six minutes.",
+    blocks: [
+      { p: [
+        "You are standing on the wall. Not beside where it was — on it. Münster's medieval defences ran along this line from the early 13th century: a rampart four and a half kilometres round, eight to ten metres high, with six towers and nine or ten gates. One of them, the Servatii gate, stood roughly here. At 104 hectares enclosed, Münster was the largest city in Westphalia by area.",
+        "It kept being strengthened — outer wall, second ditch, then in the 17th century bastions and earthworks until it counted as a baroque fortress. And in 1661 the prince-bishop <b>Christoph Bernhard von Galen</b>, having besieged and subdued his own citizens, planted a star-shaped citadel on the west side and demolished the stretch of city wall facing it so his guns had a clear field of fire into the town. He is the same man whose three private chapels you passed inside the cathedral: a bishop who built chapels and gun platforms with the same motive.",
+        "The Seven Years' War then demonstrated that none of it worked. Münster was taken and retaken; a Hanoverian bombardment in 1759 flattened a whole quarter; a powder tower blew up inside the citadel. In <b>1764</b> the prince-bishop's minister, Franz von Fürstenberg, ordered the entire fortification levelled. The citizens supported it — the upkeep was ruinous. Münster would be an open city."
+      ]},
+      { h: "What replaced it",
+        p: [
+          "From 1770 the outer rampart was replanted, to plans by <b>Johann Conrad Schlaun</b>, as a four-row avenue of lime trees encircling the whole old town. That is the path under your feet. It is about 4.5 km round, and it is closed to motor traffic: the middle strip is legally a carriageway from which every vehicle except the bicycle is banned, with footpaths either side.",
+          "So the reason Münster is a cycling city is not a 1970s policy document. It is a 1764 decision to knock the walls down and a 1770 decision to plant trees on them, which left the city with a continuous, flat, car-free ring road two centuries before anyone needed one. Schlaun, who built the palace you looked at first and the domed church after it, also laid out the ground you are finishing on. The rubble of the medieval wall went into the foundations of the prince-bishop's new palace on the site of the citadel — also his design.",
+          "That is the loop closed. Straight on for the station."
+        ]
+      }
+    ],
+    look: [
+      "Four rows of limes, not two — the planting pattern survives in places",
+      "The middle strip full of cyclists and the narrower footpaths flanking it",
+      "St. Servatii church just west of the junction: small, 13th-century, burnt out in the war and rebuilt 1947–52",
+      "How sharply the old town stops at this line — dense gabled streets on one side, 19th-century blocks on the other"
+    ],
+    practical: "From here the Hauptbahnhof is about 450 m east along Windthorststraße — five or six minutes. If you have time to spare, turning left onto the Promenade and walking the ring anticlockwise is the best 45 minutes in Münster.",
+    sources: [
+      { t: "Promenade (Münster) — Wikipedia", url: "https://de.wikipedia.org/wiki/Promenade_(M%C3%BCnster)" },
+      { t: "Stadt Münster: Stadtgeschichte", url: "https://www.stadt-muenster.de/frieden/stadtgeschichte" },
+      { t: "Münster-Altstadt — Wikipedia", url: "https://de.wikipedia.org/wiki/M%C3%BCnster-Altstadt" },
+      { t: "EGHN: Geschichte der Promenade", url: "https://www.eghn.org/de/gaerten-2/deutschland/muensterland/die-geschichte-der-promenade-muenster/" }
+    ]
+  }
+
+];
+
+/* ============================================================
+   APP
+   ============================================================ */
+(function(){
+  "use strict";
+
+  var map, meMarker, meCircle, follow = false, watchId = null;
+  var markers = [], current = 0, routeLine = null;
+  var visited = loadVisited();
+
+  /* ---------- map ---------- */
+  function initMap(){
+    var pts = STOPS.map(function(s){ return [s.lat, s.lon]; });
+    map = L.map('map', {
+      zoomControl:false,
+      attributionControl:true,
+      tap:true
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19, minZoom:13,
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    routeLine = L.polyline(pts.filter(function(_,i){ return !STOPS[i].optional; }), {
+      color:'#d8a13a', weight:4, opacity:.65, dashArray:'1 9', lineCap:'round'
+    }).addTo(map);
+
+    STOPS.forEach(function(s, i){
+      var cls = 'pin' + (s.optional ? ' optional' : '') + (visited[i] ? ' done' : '');
+      var m = L.marker([s.lat, s.lon], {
+        icon: L.divIcon({ className:'', html:'<div class="'+cls+'">'+(i+1)+'</div>', iconSize:[30,30], iconAnchor:[15,15] }),
+        zIndexOffset: 100
+      }).addTo(map);
+      m.on('click', function(){ show(i, true); });
+      markers.push(m);
+    });
+
+    map.fitBounds(routeLine.getBounds(), { paddingTopLeft:[30,90], paddingBottomRight:[30, window.innerWidth<820 ? 150 : 30] });
+  }
+
+  /* ---------- rendering ---------- */
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+  function show(i, recenter){
+    if(i < 0 || i >= STOPS.length) return;
+    current = i;
+    var s = STOPS[i];
+
+    document.getElementById('sheetnum').textContent = (i+1);
+    document.getElementById('sheettitle').textContent = s.name;
+
+    var sub = [];
+    if(s.era) sub.push(esc(s.era));
+    if(s.walk) sub.push(esc(s.walk));
+    if(s.optional) sub.push('optional');
+    document.getElementById('sheetsub').innerHTML = sub.join('<span class="sep">•</span>');
+
+    document.getElementById('body').innerHTML = buildBody(s);
+    document.getElementById('body').scrollTop = 0;
+
+    document.getElementById('btnPrev').disabled = (i === 0);
+    document.getElementById('btnNext').disabled = (i === STOPS.length - 1);
+    markVisitedBtn();
+
+    markers.forEach(function(m, j){
+      var el = m.getElement() && m.getElement().querySelector('.pin');
+      if(!el) return;
+      el.classList.toggle('active', j === i);
+      el.classList.toggle('done', !!visited[j] && j !== i);
+    });
+
+    stopSpeech();
+    openSheet();
+    if(recenter !== false){
+      var off = window.innerWidth < 820 ? 0.0011 : 0;
+      map.panTo([s.lat - off, s.lon], { animate:true, duration:.5 });
+      if(map.getZoom() < 16) map.setZoom(16);
+    }
+    document.getElementById('title').innerHTML = '<b>'+(i+1)+'.</b> ' + esc(s.name);
+  }
+
+  function buildBody(s){
+    var h = '';
+    if(s.walk_note) h += box('walk','Getting there', s.walk_note);
+    (s.blocks || []).forEach(function(b){
+      if(b.h) h += '<h4>'+esc(b.h)+'</h4>';
+      if(b.p) b.p.forEach(function(p){ h += '<p>'+p+'</p>'; });
+      if(b.list) h += '<ul>' + b.list.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+      if(b.legend) h += box('legend','Legend, not fact', b.legend);
+      if(b.heads) h += box('heads','Heads up in 2026', b.heads);
+    });
+    if(s.look && s.look.length){
+      h += '<h4>Look for</h4><ul>' + s.look.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+    }
+    if(s.practical) h += box('walk','Practical', s.practical);
+    if(s.sources && s.sources.length){
+      h += '<div class="srcs">Sources: ' + s.sources.map(function(u){
+        return '<a href="'+u.url+'" target="_blank" rel="noopener">'+esc(u.t)+'</a>';
+      }).join(' · ') + '</div>';
+    }
+    return h;
+  }
+  function box(cls, label, html){
+    return '<div class="box '+cls+'"><span class="lbl">'+label+'</span>'+html+'</div>';
+  }
+
+  /* ---------- speech ---------- */
+  var synth = window.speechSynthesis, queue = [], speaking = false;
+
+  function plainText(s){
+    var parts = [s.name + '.'];
+    (s.blocks || []).forEach(function(b){
+      if(b.h) parts.push(b.h + '.');
+      if(b.p) b.p.forEach(function(p){ parts.push(strip(p)); });
+      if(b.list) b.list.forEach(function(x){ parts.push(strip(x)); });
+      if(b.legend) parts.push('Legend, not fact. ' + strip(b.legend));
+      if(b.heads) parts.push('Heads up. ' + strip(b.heads));
+    });
+    if(s.look && s.look.length){
+      parts.push('Things to look for.');
+      s.look.forEach(function(x){ parts.push(strip(x)); });
+    }
+    return parts;
+  }
+  function strip(html){
+    var d = document.createElement('div');
+    d.innerHTML = html;
+    return (d.textContent || '').replace(/\s+/g,' ').trim();
+  }
+  function chunk(text){
+    // keep utterances short: some mobile engines truncate long strings
+    var out = [], sentences = text.match(/[^.!?]+[.!?]*/g) || [text], buf = '';
+    sentences.forEach(function(sn){
+      if((buf + sn).length > 220){ if(buf) out.push(buf.trim()); buf = sn; }
+      else buf += sn;
+    });
+    if(buf.trim()) out.push(buf.trim());
+    return out;
+  }
+  function pickVoice(){
+    var vs = synth.getVoices() || [];
+    var pref = ['Google UK English Female','Daniel','Serena','Google US English','Samantha','Karen'];
+    for(var i=0;i<pref.length;i++){
+      var v = vs.find(function(x){ return x.name === pref[i]; });
+      if(v) return v;
+    }
+    return vs.find(function(v){ return /^en[-_]GB/i.test(v.lang); })
+        || vs.find(function(v){ return /^en/i.test(v.lang); })
+        || null;
+  }
+  function speak(){
+    if(!('speechSynthesis' in window)){ toast('This browser has no built-in speech.'); return; }
+    if(speaking){ stopSpeech(); return; }
+    var text = plainText(STOPS[current]).join(' ');
+    queue = chunk(text);
+    if(!queue.length) return;
+    speaking = true;
+    setSpeakBtn(true);
+    var voice = pickVoice();
+    queue.forEach(function(t, idx){
+      var u = new SpeechSynthesisUtterance(t);
+      u.lang = voice ? voice.lang : 'en-GB';
+      if(voice) u.voice = voice;
+      u.rate = 0.97; u.pitch = 1.0;
+      if(idx === queue.length - 1) u.onend = function(){ speaking = false; setSpeakBtn(false); };
+      u.onerror = function(){ speaking = false; setSpeakBtn(false); };
+      synth.speak(u);
+    });
+  }
+  function stopSpeech(){
+    if('speechSynthesis' in window) synth.cancel();
+    speaking = false; setSpeakBtn(false);
+  }
+  function setSpeakBtn(on){
+    var b = document.getElementById('btnSpeak');
+    b.textContent = on ? '■ Stop' : '▶ Listen';
+    b.classList.toggle('primary', !on);
+  }
+  if('speechSynthesis' in window) synth.onvoiceschanged = function(){};
+
+  /* ---------- geolocation ---------- */
+  function toggleLocate(){
+    if(watchId !== null){
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null; follow = false;
+      if(meMarker){ map.removeLayer(meMarker); meMarker = null; }
+      if(meCircle){ map.removeLayer(meCircle); meCircle = null; }
+      document.getElementById('btnLocate').classList.remove('on');
+      return;
+    }
+    if(!navigator.geolocation){ toast('This browser has no location support.'); return; }
+    if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+      toast('Location needs an https:// address — see the note in the README.');
+    }
+    document.getElementById('btnLocate').classList.add('on');
+    follow = true;
+    watchId = navigator.geolocation.watchPosition(onPos, onPosErr, {
+      enableHighAccuracy:true, maximumAge:5000, timeout:20000
+    });
+  }
+  function onPos(pos){
+    var ll = [pos.coords.latitude, pos.coords.longitude];
+    var acc = pos.coords.accuracy || 30;
+    if(!meMarker){
+      meMarker = L.marker(ll, {
+        icon: L.divIcon({ className:'', html:'<div style="position:relative"><div class="mepulse"></div><div class="medot"></div></div>', iconSize:[16,16], iconAnchor:[8,8] }),
+        zIndexOffset:1000, interactive:false
+      }).addTo(map);
+      meCircle = L.circle(ll, { radius:acc, color:'#3d8bfd', weight:1, opacity:.4, fillColor:'#3d8bfd', fillOpacity:.09, interactive:false }).addTo(map);
+      map.setView(ll, Math.max(map.getZoom(), 17));
+      toast('Found you. The blue dot follows as you walk.');
+      nearestHint(ll);
+    } else {
+      meMarker.setLatLng(ll);
+      meCircle.setLatLng(ll).setRadius(acc);
+      if(follow) map.panTo(ll, { animate:true, duration:.6 });
+    }
+  }
+  function onPosErr(e){
+    document.getElementById('btnLocate').classList.remove('on');
+    watchId = null; follow = false;
+    var msg = 'Could not get your location.';
+    if(e && e.code === 1) msg = 'Location permission denied. Allow it in your browser settings.';
+    else if(e && e.code === 2) msg = 'Location unavailable — try again outdoors.';
+    else if(e && e.code === 3) msg = 'Location timed out. Try again.';
+    toast(msg);
+  }
+  function nearestHint(ll){
+    var best = -1, bd = 1e9;
+    STOPS.forEach(function(s,i){
+      var d = dist(ll[0], ll[1], s.lat, s.lon);
+      if(d < bd){ bd = d; best = i; }
+    });
+    if(best >= 0 && bd < 900) toast('Nearest stop: ' + (best+1) + '. ' + STOPS[best].name + ' — about ' + Math.round(bd) + ' m away.');
+  }
+  function dist(a1,o1,a2,o2){
+    var R=6371000, p=Math.PI/180;
+    var dA=(a2-a1)*p, dO=(o2-o1)*p;
+    var x=Math.sin(dA/2)*Math.sin(dA/2)+Math.cos(a1*p)*Math.cos(a2*p)*Math.sin(dO/2)*Math.sin(dO/2);
+    return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  }
+  // stop auto-following if the user drags the map
+  function bindDragBreak(){ map.on('dragstart', function(){ follow = false; }); }
+
+  /* ---------- visited ---------- */
+  function loadVisited(){
+    try { return JSON.parse(localStorage.getItem(TOUR.storageKey + '-visited') || '{}'); }
+    catch(e){ return {}; }
+  }
+  function saveVisited(){
+    try { localStorage.setItem(TOUR.storageKey + '-visited', JSON.stringify(visited)); } catch(e){}
+  }
+  function toggleVisited(){
+    visited[current] = !visited[current];
+    if(!visited[current]) delete visited[current];
+    saveVisited(); markVisitedBtn(); renderList();
+  }
+  function markVisitedBtn(){
+    var b = document.getElementById('btnDone');
+    b.textContent = visited[current] ? '✓ Visited' : 'Mark visited';
+    b.classList.toggle('primary', !!visited[current]);
+  }
+
+  /* ---------- stop list ---------- */
+  function renderList(){
+    var wrap = document.getElementById('listitems');
+    wrap.innerHTML = STOPS.map(function(s,i){
+      return '<div class="li'+(visited[i]?' done':'')+(s.optional?' opt':'')+'" data-i="'+i+'">' +
+             '<div class="n">'+(i+1)+'</div>' +
+             '<div class="t"><b>'+esc(s.name)+'</b><span>'+esc([s.era, s.walk].filter(Boolean).join(' · '))+'</span></div>' +
+             '</div>';
+    }).join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.li'), function(el){
+      el.addEventListener('click', function(){
+        closeList(); show(parseInt(el.dataset.i,10), true);
+      });
+    });
+    var n = Object.keys(visited).filter(function(k){ return visited[k]; }).length;
+    document.getElementById('listmeta').textContent =
+      STOPS.length + ' stops · about ' + totalKm() + ' km · ' + n + ' marked visited';
+  }
+  function totalKm(){
+    var main = STOPS.filter(function(s){ return !s.optional; }), t = 0;
+    for(var i=1;i<main.length;i++) t += dist(main[i-1].lat, main[i-1].lon, main[i].lat, main[i].lon);
+    return (t * 1.3 / 1000).toFixed(1);   // grid detour factor
+  }
+  function openList(){ renderList(); document.getElementById('list').classList.add('show'); }
+  function closeList(){ document.getElementById('list').classList.remove('show'); }
+
+  /* ---------- sheet ---------- */
+  var sheet = document.getElementById('sheet');
+  function openSheet(){ sheet.classList.add('open'); sheet.classList.remove('hidden'); }
+  function peekSheet(){ sheet.classList.remove('open'); sheet.classList.remove('hidden'); }
+  function toggleSheet(){ sheet.classList.toggle('open'); }
+
+  function bindSheetDrag(){
+    var startY = null, startOpen = false;
+    function down(e){
+      startY = (e.touches ? e.touches[0].clientY : e.clientY);
+      startOpen = sheet.classList.contains('open');
+    }
+    function up(e){
+      if(startY === null) return;
+      var endY = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY);
+      var dy = endY - startY;
+      if(Math.abs(dy) < 24){ toggleSheet(); }
+      else if(dy > 0 && startOpen){ peekSheet(); }
+      else if(dy < 0 && !startOpen){ openSheet(); }
+      startY = null;
+    }
+    ['touchstart','mousedown'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, down, {passive:true}); });
+    ['touchend','mouseup'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, up); });
+    document.getElementById('sheethead').addEventListener('click', function(){ toggleSheet(); });
+  }
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 4200);
+  }
+
+  /* ---------- boot ---------- */
+  function boot(){
+    if(!STOPS.length){ document.body.innerHTML = '<p style="padding:40px;font:16px sans-serif;color:#eee">No stop data loaded.</p>'; return; }
+    document.title = TOUR.title;
+    document.getElementById('iTitle').textContent = TOUR.title;
+    document.getElementById('iKicker').textContent = TOUR.kicker;
+    document.getElementById('iBlurb').textContent = TOUR.blurb;
+    document.getElementById('sHrs').textContent = TOUR.hours;
+    document.getElementById('title').innerHTML = '<b>' + esc(TOUR.city) + '</b> ' + esc(TOUR.subtitle);
+    if(TOUR.tip){
+      var tipEl = document.getElementById('iTip');
+      tipEl.innerHTML = TOUR.tip; tipEl.style.display = '';
+    }
+    document.getElementById('sN').textContent = STOPS.filter(function(s){return !s.optional;}).length;
+    initMap();
+    bindDragBreak();
+    bindSheetDrag();
+    document.getElementById('sKm').textContent = totalKm();
+
+    document.getElementById('btnStart').addEventListener('click', function(){
+      document.getElementById('intro').classList.add('hide');
+      show(0, true);
+      // prime the speech engine on a user gesture (required by iOS)
+      if('speechSynthesis' in window){
+        try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch(e){}
+      }
+    });
+    document.getElementById('btnList').addEventListener('click', openList);
+    document.getElementById('btnCloseList').addEventListener('click', closeList);
+    document.getElementById('btnLocate').addEventListener('click', toggleLocate);
+    document.getElementById('btnSpeak').addEventListener('click', speak);
+    document.getElementById('btnPrev').addEventListener('click', function(){ show(current-1, true); });
+    document.getElementById('btnNext').addEventListener('click', function(){ show(current+1, true); });
+    document.getElementById('btnDone').addEventListener('click', toggleVisited);
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'ArrowRight') show(current+1, true);
+      if(e.key === 'ArrowLeft') show(current-1, true);
+      if(e.key === 'Escape'){ closeList(); stopSpeech(); }
+    });
+    window.addEventListener('pagehide', stopSpeech);
+
+    show(0, false);
+    peekSheet();
+    renderList();
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
