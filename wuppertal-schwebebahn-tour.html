@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1a18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Wuppertal by Schwebebahn</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#14130f;
+    --panel:#1e1c18;
+    --panel-2:#272420;
+    --ink:#f2ede3;
+    --ink-dim:#a9a196;
+    --accent:#d8a13a;      /* Munich yellow-gold */
+    --accent-ink:#241c07;
+    --line:#3a352e;
+    --legend:#7c6ba8;
+    --sheet-peek:132px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior:none;
+  }
+
+  /* ---------- MAP ---------- */
+  #map{position:fixed;inset:0;bottom:0;background:#2a2721;z-index:0}
+  .leaflet-container{background:#2a2721;font-family:inherit}
+  .leaflet-control-attribution{font-size:9px;background:rgba(20,19,15,.7);color:#8d867b}
+  .leaflet-control-attribution a{color:#b3aa9c}
+
+  /* numbered stop pins */
+  .pin{
+    display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:50%;
+    background:var(--panel);color:var(--ink);
+    border:2.5px solid var(--accent);
+    font-weight:700;font-size:14px;line-height:1;
+    box-shadow:0 2px 8px rgba(0,0,0,.55);
+    transition:transform .18s ease, background .18s ease;
+  }
+  .pin.done{opacity:.5}
+  .pin.active{background:var(--accent);color:var(--accent-ink);transform:scale(1.32);border-color:#fff}
+  .pin.optional{border-style:dashed}
+
+  /* my-location dot */
+  .medot{width:16px;height:16px;border-radius:50%;background:#3d8bfd;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 2px 10px rgba(0,0,0,.5)}
+  .mepulse{position:absolute;inset:-9px;border-radius:50%;background:rgba(61,139,253,.28);animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+
+  /* ---------- TOP BAR ---------- */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;z-index:600;
+    padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;
+    display:flex;gap:8px;align-items:center;
+    background:linear-gradient(to bottom,rgba(20,19,15,.93),rgba(20,19,15,.6) 70%,transparent);
+    pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto}
+  .tbtn{
+    background:rgba(30,28,24,.92);border:1px solid var(--line);color:var(--ink);
+    border-radius:11px;padding:9px 12px;font-size:13px;font-weight:600;
+    display:flex;align-items:center;gap:6px;cursor:pointer;backdrop-filter:blur(8px);
+  }
+  .tbtn:active{transform:scale(.96)}
+  .tbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  #title{
+    flex:1;min-width:0;font-size:13px;font-weight:700;letter-spacing:.02em;
+    color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding-left:2px;
+  }
+  #title b{color:var(--accent)}
+
+  /* ---------- BOTTOM SHEET ---------- */
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:700;
+    height:86vh;max-height:86vh;
+    background:var(--panel);
+    border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+    transform:translateY(calc(100% - var(--sheet-peek)));
+    transition:transform .34s cubic-bezier(.32,.72,0,1);
+    display:flex;flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  #sheet.open{transform:translateY(0)}
+  #sheet.hidden{transform:translateY(100%)}
+  #grab{padding:9px 0 4px;display:flex;justify-content:center;cursor:grab;flex:0 0 auto}
+  #grab i{display:block;width:42px;height:4px;border-radius:2px;background:#4b453c}
+
+  #sheethead{flex:0 0 auto;padding:2px 18px 10px;cursor:pointer}
+  #sheetnum{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:24px;height:24px;padding:0 6px;border-radius:7px;
+    background:var(--accent);color:var(--accent-ink);
+    font-size:12px;font-weight:800;margin-right:9px;vertical-align:3px;
+  }
+  #sheettitle{display:inline;font-size:20px;font-weight:750;letter-spacing:-.01em}
+  #sheetsub{margin-top:5px;font-size:12.5px;color:var(--ink-dim);font-weight:500}
+  #sheetsub .sep{opacity:.4;margin:0 6px}
+
+  #controls{
+    flex:0 0 auto;display:flex;gap:7px;padding:0 18px 12px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+  }
+  .cbtn{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+  }
+  .cbtn:active{transform:scale(.96)}
+  .cbtn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .cbtn:disabled{opacity:.4;cursor:default}
+  .cbtn.ghost{background:transparent}
+
+  #body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px 34px}
+  #body p{margin:0 0 12px}
+  #body h4{
+    margin:20px 0 8px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--accent);font-weight:800;
+  }
+  #body ul{margin:0 0 12px;padding-left:19px}
+  #body li{margin-bottom:7px}
+  #body em{color:var(--ink-dim);font-style:italic}
+  #body strong{color:#fff;font-weight:680}
+  .box{
+    border-radius:12px;padding:11px 13px;margin:0 0 14px;font-size:14.5px;line-height:1.5;
+    background:var(--panel-2);border-left:3px solid var(--line);
+  }
+  .box .lbl{
+    display:block;font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+    font-weight:800;margin-bottom:5px;
+  }
+  .box.legend{border-left-color:var(--legend);background:#242034}
+  .box.legend .lbl{color:#b6a6e0}
+  .box.heads{border-left-color:#c9683f;background:#2c221c}
+  .box.heads .lbl{color:#e39268}
+  .box.walk{border-left-color:#5b9a6b;background:#1e2721}
+  .box.walk .lbl{color:#8fcba0}
+  #body .srcs{font-size:11.5px;color:#7d766b;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  #body .srcs a{color:#9a9184}
+
+  /* ---------- STOP LIST ---------- */
+  #list{
+    position:fixed;inset:0;z-index:800;background:var(--bg);
+    display:none;flex-direction:column;
+    padding-top:env(safe-area-inset-top);
+  }
+  #list.show{display:flex}
+  #listhead{
+    padding:14px 18px 12px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;flex:0 0 auto;
+  }
+  #listhead h2{margin:0;font-size:17px;font-weight:750;flex:1}
+  #listhead p{margin:3px 0 0;font-size:12px;color:var(--ink-dim);font-weight:500}
+  #listitems{flex:1 1 auto;overflow-y:auto;padding:6px 0 40px}
+  .li{
+    display:flex;gap:13px;align-items:flex-start;padding:13px 18px;
+    border-bottom:1px solid #262320;cursor:pointer;
+  }
+  .li:active{background:var(--panel-2)}
+  .li .n{
+    flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    border:2px solid var(--accent);font-size:12px;font-weight:800;margin-top:1px;
+  }
+  .li.done .n{background:var(--accent);color:var(--accent-ink)}
+  .li.opt .n{border-style:dashed;border-color:var(--ink-dim);color:var(--ink-dim)}
+  .li .t{flex:1;min-width:0}
+  .li .t b{display:block;font-size:15px;font-weight:650}
+  .li .t span{display:block;font-size:12px;color:var(--ink-dim);margin-top:2px}
+
+  /* ---------- INTRO / HELP OVERLAY ---------- */
+  #intro{
+    position:fixed;inset:0;z-index:900;background:rgba(12,11,9,.96);
+    display:flex;align-items:center;justify-content:center;padding:22px;
+    overflow-y:auto;
+  }
+  #intro.hide{display:none}
+  .card{
+    max-width:520px;width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:18px;padding:24px 22px;
+  }
+  .card h1{margin:0 0 4px;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+  .card .kicker{color:var(--accent);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;margin-bottom:9px}
+  .card p{margin:0 0 12px;font-size:14.5px;color:#ded7cb}
+  .card ul{margin:0 0 14px;padding-left:19px;font-size:14px;color:#ded7cb}
+  .card li{margin-bottom:6px}
+  .card .go{
+    width:100%;background:var(--accent);color:var(--accent-ink);border:0;
+    border-radius:12px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;margin-top:4px;
+  }
+  .card .go:active{transform:scale(.98)}
+  .stat{display:flex;gap:18px;margin:0 0 16px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .stat div{flex:1}
+  .stat b{display:block;font-size:19px;font-weight:800;color:var(--accent)}
+  .stat span{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+
+  #toast{
+    position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 62px);transform:translateX(-50%);
+    z-index:850;background:rgba(40,37,32,.97);border:1px solid var(--line);
+    color:var(--ink);border-radius:11px;padding:10px 15px;font-size:13px;font-weight:600;
+    max-width:88vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;
+    backdrop-filter:blur(8px);
+  }
+  #toast.show{opacity:1}
+
+  @media (min-width:820px){
+    #sheet{left:auto;right:14px;bottom:14px;top:74px;width:430px;height:auto;max-height:none;border-radius:16px;border:1px solid var(--line);transform:none}
+    #sheet.hidden{transform:translateX(120%)}
+    :root{--sheet-peek:0px}
+    #grab{display:none}
+    #sheethead{padding-top:16px;cursor:default}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <button class="tbtn" id="btnList">☰ Stops</button>
+  <div id="title"></div>
+  <button class="tbtn" id="btnLocate">◎ Locate</button>
+</div>
+
+<div id="sheet">
+  <div id="grab"><i></i></div>
+  <div id="sheethead">
+    <span id="sheetnum">1</span><h3 id="sheettitle">Karlstor</h3>
+    <div id="sheetsub"></div>
+  </div>
+  <div id="controls">
+    <button class="cbtn primary" id="btnSpeak">▶ Listen</button>
+    <button class="cbtn ghost" id="btnPrev">← Prev</button>
+    <button class="cbtn ghost" id="btnNext">Next →</button>
+    <button class="cbtn ghost" id="btnDone">✓ Visited</button>
+  </div>
+  <div id="body"></div>
+</div>
+
+<div id="list">
+  <div id="listhead">
+    <div style="flex:1">
+      <h2>The route</h2>
+      <p id="listmeta"></p>
+    </div>
+    <button class="tbtn" id="btnCloseList">✕</button>
+  </div>
+  <div id="listitems"></div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <div class="kicker" id="iKicker">A self-guided walk</div>
+    <h1 id="iTitle">City Walking Tour</h1>
+    <p id="iBlurb"></p>
+    <div class="stat">
+      <div><b id="sN">–</b><span>Stops</span></div>
+      <div><b id="sKm">–</b><span>km of line</span></div>
+      <div><b id="sHrs">–</b><span>Hours</span></div>
+    </div>
+    <ul>
+      <li><b>Tap a numbered pin</b> or use ☰ Stops to read about it.</li>
+      <li>Stops run <b>west to east</b>, so always board towards <b>Oberbarmen</b>.</li>
+      <li><b>◎ Locate</b> puts a blue dot on the map and follows you.</li>
+      <li><b>▶ Listen</b> reads the text aloud using your phone's voice.</li>
+      <li>Drag the panel down to see more map, up to read more.</li>
+    </ul>
+    <p id="iTip" style="font-size:13px;color:#a9a196;display:none"></p>
+    <button class="go" id="btnStart">Start the ride</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   STOP DATA  —  injected below
+   ============================================================ */
+const TOUR = {
+  city:       "Wuppertal",
+  subtitle:   "Schwebebahn · Elberfeld to Barmen",
+  title:      "Wuppertal by Schwebebahn",
+  kicker:     "A self-guided tour by suspended railway",
+  blurb:      "Wuppertal is a city shaped like a river because it is a city built on one. Ride the middle of the Schwebebahn from Elberfeld to Barmen and the whole story lines up underneath you: a 1527 bleaching monopoly, two rival textile towns, an elephant, two nights in 1943, and a railway that turns 125 this year.",
+  hours:      "2\u00bd\u20133",
+  tip:        "<b>Ticket:</b> one 24-hour WSW ticket covers the whole tour \u2014 there are seven separate rides, so single tickets are false economy. The DeutschlandTicket is valid. <b>Timing:</b> the Von der Heydt-Museum is shut on Mondays and the Engels-Haus too, so avoid a Monday if you want interiors. Barmen's market on Marktplatz runs Tuesday, Friday and Saturday mornings.",
+  storageKey: "wuppertal-schwebebahn-tour"
+};
+
+/* ============================================================
+   STOP DATA
+   ------------------------------------------------------------
+   One object per stop, in walking order. Full schema:
+
+   {
+     name:      "Stop name",                  // required
+     era:       "Gothic, 1468",               // short line under the title
+     walk:      "250 m \u00b7 3 min",              // distance from the previous stop
+     lat: 0.0, lon: 0.0,                      // required, decimal degrees
+     optional:  true,                         // omit for normal stops; optional ones
+                                              // are excluded from the route line,
+                                              // distance total and stop count
+     walk_note: "Turn left at ... <b>bold</b>",  // green box: how to get here / where to stand
+     blocks: [                                // the main narration, in order
+       { h:"Section heading",                 // all keys optional
+         p:["paragraph <b>html</b>", "..."],
+         list:["bullet", "..."],
+         legend:"purple box: a story that is NOT documented fact",
+         heads:"orange box: closure or disruption at time of writing"
+       }
+     ],
+     look: ["what to physically look at", "..."],   // rendered as 'Look for'
+     practical: "hours, prices, access",            // grey box at the end
+     sources: [{t:"Source name", url:"https://..."}]
+   }
+
+   Inline HTML allowed in every string: <b> <i> <a>. Keep <b> for the
+   thing a reader would want to remember; don't bold whole sentences.
+   ============================================================ */
+const STOPS = [
+
+  /* ---- 1 ---- */
+  {
+    name:"Historische Stadthalle",
+    era:"Elberfeld's calling card, 1900",
+    walk:"start \u00b7 8 min uphill from Hauptbahnhof",
+    lat:51.25283, lon:7.14310,
+    walk_note:"From <b>Wuppertal Hauptbahnhof</b> cross the D\u00f6ppersberg plaza and climb the Johannisberg \u2014 eight minutes, all of it uphill. Stand on the forecourt facing the front of the building. When you leave, walk 300 m down and north to the <b>Ohligsm\u00fchle</b> Schwebebahn station. Every stop from here runs eastward, so for the whole tour you board towards <b>Oberbarmen</b>.",
+    blocks:[
+      { h:"Why there is a city here at all",
+        p:["A river answered a chemistry question. Raw linen yarn comes off the spindle a dirty grey, and before industrial bleaching the only way to whiten it was to spread it on grass and keep it wet: sun, water and the grass do the work over weeks. The Wupper turned out to be unusually good at this. Its water was soft, clear and nearly free of iron \u2014 iron stains yarn \u2014 and it ran through wide damp meadows in a valley that holds mist.",
+           "On <b>29 April 1527</b>, Duke Johann III and Duchess Maria of J\u00fclich-Cleves-Berg took 861 gold guilders from the bleachers of Barmen and Elberfeld and sold them a monopoly: nowhere else in the ducal lands might yarn be bleached or twisted. The privilege was called the <i>Garnnahrung</i>, literally the living to be made from yarn, and it held until 1810. In those 283 years two hamlets on a bend in the river became the densest concentration of textile money in Germany. By 1821 Elberfeld and Barmen together held close to 43,000 people. Outsiders called the pair the German Manchester and meant it admiringly.",
+           "So the whole city you are about to travel through is a consequence of water chemistry. Everything else \u2014 the ribbon shape, the crowding, the Schwebebahn itself \u2014 follows from a valley that was worth living in but too narrow to live in comfortably."]
+      },
+      { h:"What the money built",
+        p:["This is what that fortune looked like when it wanted to be taken seriously. Elberfeld raised its Stadthalle as a civic showpiece at the end of the nineteenth century and opened it in <b>1900</b>, and it pointedly did not build down on the valley floor. The smoke was on the valley floor. The Johannisberg put the concert hall in clean air, above the roofs of the town that paid for it. You are standing higher now than the Schwebebahn will carry you all day.",
+           "The hall's reputation today rests on its sound. The Grosser Saal is known internationally for its acoustics and orchestras travel here to record in it. The organ is much younger than the room: built in 1996 by Sauer of H\u00f6xter, with 67 stops and 4,706 pipes, among them a 64-foot pedal register that is felt more than heard.",
+           "And it is still standing, which very little in Elberfeld is. Of Wuppertal's historic venues the Stadthalle was the only one to come through the Second World War substantially undamaged. Hold on to that, because it sets up the rest of the tour: nearly every old-looking thing you meet from here on is either a survivor by luck or a reconstruction, and the difference is usually visible once you know to look for it.",
+           "One date to file away before you go down the hill. On <b>24 October 1900</b>, the year this hall opened, Kaiser Wilhelm II spent a day in the valley cutting ribbons. He comes up again at the next two stops, and he is the reason a suspended railway carriage is a tourist attraction rather than a footnote."]
+      }
+    ],
+    look:[
+      "Turn your back on the building and look down over the valley: you are seeing, in reverse, the line the rich climbed above.",
+      "The <b>Schwimmoper</b> across the way \u2014 Wuppertal's 1950s municipal baths, nicknamed the swimming opera for its sweeping concrete roof, and a listed building. A complete change of century in one glance.",
+      "The Wilhelm-D\u00f6rpfeld-Gymnasium alongside: the same wave of civic confidence as the hall."
+    ],
+    practical:"A working concert venue, not a museum. The interior opens for events and occasional guided tours; the foyer and terrace are usually accessible by day. Programme at stadthalle-wuppertal.de.",
+    sources:[
+      {t:"Stadthalle Wuppertal (Wikipedia)", url:"https://de.wikipedia.org/wiki/Stadthalle_Wuppertal"},
+      {t:"Garnnahrung (Wikipedia)", url:"https://de.wikipedia.org/wiki/Garnnahrung"},
+      {t:"City of Wuppertal chronicle", url:"https://www.wuppertal.de/kultur-bildung/stadtarchiv/stadtchronik/600_stadtarchiv_chronik_Wuppertal.php"},
+      {t:"History of Elberfeld (City of Wuppertal)", url:"https://www.wuppertal.de/microsite/unser-elberfeld/archaeologie/geschichte-elberfelds/index.php"}
+    ]
+  },
+
+  /* ---- 2 ---- */
+  {
+    name:"Ohligsm\u00fchle: the station that vanished",
+    era:"Destroyed 1943, reopened 1982",
+    walk:"300 m \u00b7 4 min downhill",
+    lat:51.25513, lon:7.14278,
+    walk_note:"Down the hill and north from the Stadthalle. Buy a <b>24-hour ticket</b> here if you have not already \u2014 there are seven rides ahead of you. Then go up to the platform for <b>Oberbarmen</b> and read the rest of this before the train comes.",
+    blocks:[
+      { h:"The plainest station on the line",
+        p:["This is the least beautiful station of the twenty, and that is exactly why it is worth three minutes. Look at the concrete. Then remember it, because in an hour you will be standing at Landgericht and Werther Br\u00fccke looking at riveted ironwork and glass, and the contrast is a war memorial that nobody labelled as one.",
+           "Ohligsm\u00fchle was wrecked in the bombing of 1943 and simply not replaced. Trains went past the gap for <b>thirty-nine years</b> before a new station opened here in <b>1982</b>. Kluse, one stop the other side of the Hauptbahnhof, did worse: burnt out in the same summer, it did not reopen until <b>1999</b>. A city can rebuild a cathedral faster than it can rebuild a suburban halt, because a halt has to justify itself in passenger numbers."]
+      },
+      { h:"What you are about to ride",
+        p:["The official name of the thing overhead is a mouthful: the single-rail suspended railway, system Eugen Langen. It runs <b>13.3 km</b> between Vohwinkel in the west and Oberbarmen in the east, calls at twenty stations, and takes about half an hour end to end. For roughly ten of those kilometres it hangs about <b>12 m above the river</b>; for the last 3.3 km at the western end it hangs about 8 m above a main road instead.",
+           "It is not a novelty ride. It is line 60 of the regional transport network, it carries more than <b>80,000 people a day</b>, and on <b>1 March 2026</b> it completed 125 years of service without changing its basic principle. Trains run roughly 05:20 to 23:00, every three to six minutes at the busy hours. You will rarely wait long enough to get bored.",
+           "The reason it exists rather than a tram or a metro is the valley you looked down on from the Stadthalle. By the 1890s Elberfeld and Barmen had the population of a city and the street plan of two villages, hemmed in by steep sides, and the flat land was already occupied by houses, factories and the railway. There was one unbuilt corridor left running the length of the town, and it was full of water. Building above the river was not a whim. It was the only space left."]
+      }
+    ],
+    look:[
+      "The single running rail inside the box girder \u2014 the cars hang from bogies that ride on top of it, one rail per direction.",
+      "The angle of the supports where they straddle the road: an iron A-frame doing the same job as it did in 1901.",
+      "The stairs and the lift shaft bolted on later; step-free access was retrofitted across the network from the 1990s, not designed in."
+    ],
+    practical:"Lifts here are being replaced through 2026: the Vohwinkel-direction lift is out roughly 7 September to 30 October. If you need step-free access, the operator suggests using Wuppertal Hbf or Robert-Daum-Platz instead.",
+    sources:[
+      {t:"WSW Schwebebahn renewal programme", url:"https://www.wsw-online.de/erneuerungsprogramm-schwebebahn/"},
+      {t:"Wuppertal Schwebebahn (Wikipedia)", url:"https://en.wikipedia.org/wiki/Wuppertal_Schwebebahn"},
+      {t:"baukunst-nrw on the stations", url:"http://www.baukunst-nrw.de/objekte/Wuppertaler-Schwebebahn--16.htm"}
+    ]
+  },
+
+  /* ---- 3 ---- */
+  {
+    name:"D\u00f6ppersberg and the Hauptbahnhof",
+    era:"Railway 1847, plaza 2018",
+    walk:"1 stop east \u00b7 2 min",
+    lat:51.25552, lon:7.14882,
+    walk_note:"One stop towards Oberbarmen. Come down from the Schwebebahn station and stand on the open plaza between it and the main railway station, with the columned station front on your right.",
+    blocks:[
+      { h:"The competitor that came first",
+        p:["Before there was a railway in the air there was one on the ground, and it got the good land. The Bergisch-M\u00e4rkische Railway Company opened its line east from Elberfeld on <b>9 October 1847</b> and extended it to Hagen and Dortmund the following year. The reception building went up in <b>1848</b> and is one of the oldest big-city station buildings in Germany \u2014 a stranger claim than it sounds, since it burnt out completely in June 1943 and was rebuilt to its old design precisely because it was already considered historic.",
+           "That railway is why the Schwebebahn had to be exotic. The flat strip of valley floor was taken: by the river, by the factories that needed the river, and by these tracks. When Elberfeld and Barmen went looking for a local transport system in the 1890s, the engineer Eugen Langen offered them a suspended line and they took it because there was no ground left to take."]
+      },
+      { h:"Langen, who never saw it",
+        p:["Carl Eugen Langen was a Cologne sugar manufacturer, credited with inventing the sugar cube. Suspended rails were at that point a factory technology for moving goods; his contribution was to scale one up and put passengers in it. He offered the system to Berlin, Munich and Breslau first. All three said no.",
+           "Barmen and Elberfeld said yes in December 1894, and signed contracts on the last day of that year. Langen died on <b>2 October 1895</b>, before construction began \u2014 of fish poisoning, contracted at the opening celebrations for the Kiel Canal. Local opponents were calling the scheme a mad undertaking at the time. It was built between 1898 and 1903, cost around <b>16 million gold marks</b>, and consumed some 19,200 tonnes of iron and steel on more than four hundred supports. Sources differ on the exact number of supports, which tells you something about how much of the structure has since been replaced.",
+           "The first test run was on 5 December 1898. And on <b>24 October 1900</b> \u2014 the Kaiser again \u2014 Wilhelm II and Auguste Viktoria boarded here at D\u00f6ppersberg and rode to Vohwinkel, stopping at the Zoo to inspect the turning loop. The car they used, number 5, survives as the <i>Kaiserwagen</i> and can still be chartered. The public got the line on <b>1 March 1901</b>: the morning service ran every ten minutes, and demand was so heavy that by the afternoon of the first day it was running every five."]
+      },
+      { h:"The plaza you are standing on",
+        p:["Everything at ground level here is recent and cost a great deal of argument. Until the mid-2010s the two stations were joined by a 200-metre pedestrian tunnel under the main road, which locals had nicknamed the urethra on account of its state. The city lowered the road over three years, opened a surface route in autumn 2017, and finished the whole D\u00f6ppersberg rebuild by <b>2018</b>. Whether it was worth the money is still a live argument here. What is not in doubt is that you can now walk from a train to the world's oldest electric suspended railway in about ninety seconds, in daylight."]
+      }
+    ],
+    look:[
+      "The four columns over the station entrance \u2014 the 1848 design, rebuilt after the fire.",
+      "The long neoclassical block just west of it: the former Royal, later Federal, Railway Directorate for Elberfeld, listed, and now full of council offices, the job centre and a university campus.",
+      "Where the B7 main road disappears below you. That trench is the whole point of the 2018 rebuild.",
+      "The Schwebebahn station's own name boards: it is signed Wuppertal Hbf (D\u00f6ppersberg), keeping the older place name alive."
+    ],
+    sources:[
+      {t:"Wuppertal Hauptbahnhof (Wikipedia)", url:"https://en.wikipedia.org/wiki/Wuppertal_Hauptbahnhof"},
+      {t:"Structurae: Wuppertal Hauptbahnhof", url:"https://structurae.net/de/bauwerke/wuppertal-hauptbahnhof"},
+      {t:"Langen family archive on the Schwebebahn", url:"https://familien-langen.net/die-wuppertaler-schwebebahn/"},
+      {t:"WSW: 125 years of the Schwebebahn", url:"https://www.wsw-online.de/ueber-uns/presse/news/artikel/detail/125-jahre-wuppertaler-schwebebahn/"}
+    ]
+  },
+
+  /* ---- 4 ---- */
+  {
+    name:"Neumarkt: Rathaus and Von der Heydt",
+    era:"Town hall opened 1900",
+    walk:"450 m \u00b7 6 min on foot",
+    lat:51.25905, lon:7.14633,
+    walk_note:"Walk north-west from D\u00f6ppersberg through the shopping streets to the Neumarkt. Do not re-board yet; this stop and the next are both on foot, and you will rejoin the Schwebebahn at the Hauptbahnhof afterwards.",
+    blocks:[
+      { h:"The same day, the same Kaiser",
+        p:["On the morning of <b>24 October 1900</b>, before he got into the suspended railway carriage, Wilhelm II inaugurated this building. He also opened the Ruhmeshalle over in Barmen and unveiled a fountain in Vohwinkel. Three towns, one imperial visit, one afternoon: it was the most expensive day of civic self-promotion the valley had ever staged, and the three municipalities spent the equivalent of several million euros on it. His original October date had to be postponed because his mother fell ill, so the food ordered for tens of thousands of spectators was thrown away and the garlands wilted before he arrived.",
+           "Which is the useful thing about the Kaiser here: he is a thread. Stadthalle, town hall, Schwebebahn, all inaugurated in the same twelve months by the same man. Elberfeld in 1900 was a place with money and something to prove."]
+      },
+      { h:"The bankers and the poor",
+        p:["The older building on the Turmhof, a short walk from here, was Elberfeld's previous town hall. Since 1902 it has held the city's art collection, and since 1961 it has carried the name of the family that paid for much of it: <b>Von der Heydt</b>, Elberfeld bankers. The collection is far better than a city this size has any right to \u2014 French and German nineteenth and twentieth century painting, a Picasso, a van Gogh.",
+           "The same family name attaches to something less decorative. In the middle of the nineteenth century the valley's population was exploding and its municipal poor relief was collapsing under the load. Daniel von der Heydt, who ran Elberfeld's poor administration, drew up a new ordinance with two colleagues in 1852, and from <b>1853</b> the city ran what became known across Europe as the <i>Elberfelder System</i>.",
+           "It worked by cutting the city into <b>252 quarters</b>, each with one unpaid volunteer overseer responsible for a handful of families. Relief was granted for fourteen days at a time; to keep it you had to be reassessed. It was cheap, it was intrusive, and it was extraordinarily influential \u2014 M\u00fcnster, Cologne, Breslau and Berlin all copied it, and it shaped the argument about welfare across the continent before being superseded around 1905. Elberfeld admitted only men to the role. In 1880, short of volunteers, the administration founded a women's association to fill the gap, which handed a generation of middle-class women something rare at the time: an official public function.",
+           "It is worth holding the two halves together. The pictures in the museum and the fourteen-day relief cycle came out of the same boardrooms."]
+      }
+    ],
+    look:[
+      "The Rathaus tower and the fountain in front of it \u2014 1900 municipal architecture doing an impression of something much older.",
+      "The Turmhof frontage of the Von der Heydt-Museum: it reads as a town hall because it was one.",
+      "Ground level all around the Neumarkt: post-1943 rebuilding, with the pre-war street lines mostly kept."
+    ],
+    practical:"Von der Heydt-Museum: closed Mondays, otherwise from 11:00, with a late opening on Thursdays. Admission around \u20ac7. Allow an hour if you go in.",
+    sources:[
+      {t:"Elberfelder System (Wikipedia)", url:"https://de.wikipedia.org/wiki/Elberfelder_Modell"},
+      {t:"WZ on the 1900 imperial visit", url:"https://www.wz.de/nrw/wuppertal/reenactment-in-wuppertal-kaiserpaar-war-mit-der-schwebebahn-unterwegs_aid-54236203"},
+      {t:"Wuppertal city archive: the imperial visit of 1900", url:"https://www.wuppertal.de/kultur-bildung/stadtarchiv/fotoarchiv/102370100000463694.php"}
+    ]
+  },
+
+  /* ---- 5 ---- */
+  {
+    name:"Alte Synagoge",
+    era:"Synagogue 1865, burned 1938, memorial 1994",
+    walk:"300 m \u00b7 4 min",
+    lat:51.25927, lon:7.14446,
+    walk_note:"North from the Neumarkt to Gen\u00fcgsamkeitstra\u00dfe. The grey lines set into the ground mark the footprint of the building that stood here.",
+    blocks:[
+      { p:["Elberfeld's Jewish community was a product of the same boom as everything else on this tour. A handful of Jewish residents are recorded in the sixteenth and seventeenth centuries, but the community only grew after the Prussian reforms of 1812 opened trade and craft to Jews. There were about 92 Jews in Elberfeld in 1846. By 1871 there were roughly 600, by 1895 about 1,200, and by 1925 around <b>2,300</b>. The congregation bought this plot in 1863 and consecrated its synagogue here in <b>1865</b>.",
+           "In the early hours of <b>10 November 1938</b> it was set on fire and looted, and burned down to its foundations; what was left was demolished. At least 125 Wuppertal Jews were taken to Dachau in the days that followed and released after some weeks. By May 1939 about a thousand Jews remained in the city. Between 1941 and 1944 several hundred were deported."]
+      },
+      { h:"The argument about the empty plot",
+        p:["What happened next is its own piece of local history. The site became rubble, then a car park. A plaque went up in 1962. In the 1980s the city proposed building a multi-storey car park on it, and enough groups and council factions objected that the plan died; in <b>1987</b> the council resolved to build a memorial instead. The Begegnungsst\u00e4tte opened on <b>15 April 1994</b>, with the chairman of the Central Council of Jews in Germany present.",
+           "The architects \u2014 Busmann and Haberer of Cologne, with the artist Zbyszek Oksiuta and Volker P\u00fcschel \u2014 designed it on the outline of the destroyed synagogue, and it is one of very few German memorials of its kind that was purpose-built as a memorial rather than installed in a borrowed building. It is deliberately plain and full of light. The permanent exhibition, in place since 2011, deals with Jewish life in Wuppertal and the Bergisches Land across two centuries, not only with its destruction \u2014 much of it assembled from what emigrating families left behind in the 1930s.",
+           "It is the only Jewish museum and the only dedicated National Socialism learning centre in the region, and it runs on barely two full-time posts."]
+      }
+    ],
+    look:[
+      "The exposed <b>northern cellar wall</b>, visible from the Gen\u00fcgsamkeitstra\u00dfe side. It is the only authentic surviving fabric of the 1865 synagogue.",
+      "The grey markings in the paving tracing the old ground plan \u2014 walk the outline and you get the size of what was lost.",
+      "How ordinary the surrounding street is. Nothing about the neighbourhood announces this."
+    ],
+    practical:"Open Tuesday to Friday and Sunday, roughly 14:00 to 17:00; closed Monday and Saturday. Free admission. The outdoor footprint and the cellar wall can be seen at any time.",
+    sources:[
+      {t:"Begegnungsst\u00e4tte Alte Synagoge (Wikipedia)", url:"https://de.wikipedia.org/wiki/Begegnungsst%C3%A4tte_Alte_Synagoge_Wuppertal"},
+      {t:"City of Wuppertal", url:"https://www.wuppertal.de/kultur-bildung/museen/synagoge/102370100000280598.php"},
+      {t:"Memorial Museums profile", url:"https://www.memorialmuseums.org/memorialmuseum/begegnungsstatte-alte-synagoge-wuppertal"},
+      {t:"GedenkstättenForum: 25 years", url:"https://www.gedenkstaettenforum.de/aktivitaeten/gedenkstaettenrundbrief/detail/25-jahre-begegnungsstaette-alte-synagoge-wuppertal-1"}
+    ]
+  },
+
+  /* ---- 6 ---- */
+  {
+    name:"Kluse and the empty theatre",
+    era:"Theatre 1966, dark since 2013",
+    walk:"back to Hbf, then 1 stop \u00b7 12 min",
+    lat:51.25562, lon:7.15661,
+    walk_note:"Walk back to <b>Wuppertal Hbf</b> and take one stop east to <b>Kluse</b>. Come down and look at the long low building beside the river. This is what the city calls the Kulturinsel \u2014 the culture island \u2014 on a bend of the Wupper.",
+    blocks:[
+      { h:"Fifty-eight years off the map",
+        p:["Kluse is the sharper version of the story you heard at Ohligsm\u00fchle. This station burned out in the summer of 1943 and stayed gone. Trains passed the site for <b>fifty-eight years</b>. It reopened, newly built, in <b>1999</b>, and it exists at all because the buildings next to it needed serving: the theatre and the multiplex cinema.",
+           "There is a smaller, more recent piece of Schwebebahn history on this stretch too. On <b>17 October 2013</b> a length of conductor rail about 260 metres long came away between Landgericht and Kluse and fell onto the main road below, hitting parked cars, a moving car and the river. Nobody was killed. It is the sort of thing that explains why the operator is now working through a renewal programme scheduled to run until about 2031, and why the whole line will have to close for up to fifteen months in the 2030s while the depot at the western end is rebuilt."]
+      },
+      { h:"The building that will not open",
+        p:["The Schauspielhaus opened in <b>1966</b> and is Wuppertal's most conspicuous unresolved problem. It was the working home of <b>Pina Bausch</b> and the Tanztheater Wuppertal, it closed in <b>2013</b>, and it has stood empty ever since.",
+           "The plan is grand. In 2015 the council resolved to convert it into the <b>Pina Bausch Zentrum</b>, an international centre for dance, and the New York practice Diller Scofidio + Renfro won the design. Federal money of \u20ac37.2 million is committed to the historic building alone; the state of North Rhine-Westphalia has put in \u20ac12.5 million; the total project is now costed at around <b>\u20ac161 million</b>, most of it borrowed by a city that is not wealthy.",
+           "The dates have slipped repeatedly. An opening once promised for 2026 is now projected for <b>2032</b>. As of this summer the council's decisive vote on the whole project was expected in September 2026, planning for the existing buildings had been submitted to secure the federal grant, and demolition and construction were pencilled in from mid-2028. Wuppertal has been arguing about this building for two decades, and the argument is genuinely difficult: it is a listed structure, it is the single most important site in the history of modern dance, and the city is broke."]
+      },
+      { heads:"The theatre is closed and looks it \u2014 shuttered, weathered, occasionally hosting a one-off event in the small hall. There is nothing to go inside for. It is still worth the two minutes, because in a few years this will either be a building site or a world-class institution, and the derelict version will be gone."
+      }
+    ],
+    look:[
+      "The 1960s theatre frontage: long horizontals, a lot of glass, very much of its decade, and now dulled by twelve years of vacancy.",
+      "The Wupper immediately behind it \u2014 the design for the new centre puts an event space on the river side.",
+      "Looking west along the line towards Landgericht: that is the stretch where the conductor rail came down in 2013."
+    ],
+    sources:[
+      {t:"City of Wuppertal: Pina Bausch Zentrum", url:"https://www.wuppertal.de/microsite/gmw/Bauprojekte/kultur/pina-bausch-zentrum.php"},
+      {t:"WZ: costs rise, opening 2032", url:"https://www.wz.de/nrw/wuppertal/wuppertals-pina-bausch-zentrum-wird-erheblich-teurer-und-soll-2032-oeffnen_aid-140527341"},
+      {t:"talzeit: next planning phase, July 2026", url:"https://www.talzeit.de/lokales/wuppertal/article412514157/jahrhundertchance-pina-bausch-zentrum-stadt-will-12-millionen-euro-fuer-naechste-planungsphase-freigeben.html"},
+      {t:"Schwebebahn incidents (Nahverkehr Wiki)", url:"https://nahverkehr.fandom.com/de/wiki/Wuppertaler_Schwebebahn"}
+    ]
+  },
+
+  /* ---- 7 ---- */
+  {
+    name:"Landgericht: the honest copy",
+    era:"1901 design, rebuilt to match",
+    walk:"1 stop \u00b7 2 min",
+    lat:51.25806, lon:7.16244,
+    walk_note:"One stop east. Stay on the platform for this one and look at the station itself rather than the city. Then look up at the roof structure before you go back down.",
+    blocks:[
+      { h:"Three stations that were allowed to look old",
+        p:["Between <b>1995 and 2014</b> the Schwebebahn was effectively rebuilt around its passengers. The supporting framework was renewed in the old style, the stations were modernised, lifts were added, and in 2016 the line voltage went up from 600 to 750 volts and a new generation of cars came into service. Almost nothing you touch on this railway is original.",
+           "In all that work, exactly three stations were rebuilt in a form matching the originals: <b>Landgericht</b>, <b>V\u00f6lklinger Stra\u00dfe</b> and <b>Werther Br\u00fccke</b>. You are standing in the first, you will pass through the second in a few minutes, and the third is where this tour ends. Everything else got the honest modern treatment, which is why Ohligsm\u00fchle and Kluse look the way they do.",
+           "This is a more interesting decision than straightforward preservation. These are not surviving 1901 stations; they are reconstructions of them, built with modern steel to a period pattern. The whole line has been a listed monument since <b>26 May 1997</b>, which is unusual for a working piece of public transport, and it means every renewal has to negotiate between a museum's obligations and a commuter railway's."]
+      },
+      { h:"Why it is called Landgericht",
+        p:["The name comes from the regional court nearby, one of the heavy public institutions that the boom towns acquired once they had the tax base for them. It is a reminder of what Elberfeld became: not just mills, but courts, banks, a railway directorate, a concert hall. A provincial textile town that spent forty years equipping itself like a capital.",
+           "It is also, in a small way, a demonstration of how the Schwebebahn organises the city. There is no natural centre to Wuppertal. There is a line, and things arrange themselves along it, each announcing itself by the station named after it. Ask a local where something is and there is a fair chance the answer will be a station."]
+      }
+    ],
+    look:[
+      "The riveted-looking lattice ironwork and the way the roof trusses meet the columns \u2014 the 1901 vocabulary, executed recently.",
+      "The glazing pattern in the platform screens. Compare it with the flat concrete at Ohligsm\u00fchle.",
+      "Below you: the Wupper and the road sharing the narrow floor of the valley, with no room for anything else. That is the whole argument for building overhead in one view."
+    ],
+    sources:[
+      {t:"baukunst-nrw: Wuppertaler Schwebebahn", url:"http://www.baukunst-nrw.de/objekte/Wuppertaler-Schwebebahn--16.htm"},
+      {t:"Wuppertal Schwebebahn (Wikipedia)", url:"https://en.wikipedia.org/wiki/Wuppertal_Schwebebahn"},
+      {t:"Wikidata: Landgericht station", url:"https://www.wikidata.org/wiki/Q21036572"}
+    ]
+  },
+
+  /* ---- 8 ---- */
+  {
+    name:"V\u00f6lklinger Stra\u00dfe: the river",
+    era:"The Wupper, 1527 to now",
+    walk:"1 stop \u00b7 2 min",
+    lat:51.26225, lon:7.17417,
+    walk_note:"One stop east \u2014 and from here on you are riding directly above the water for most of the way. Come down to the riverside if you can and look at the Wupper properly. This is the second of the three period-pattern stations.",
+    blocks:[
+      { h:"Look at the water",
+        p:["This is the thing the whole city is about, and most visitors ride over it for half an hour without giving it a glance. The Wupper here is not wide and not dramatic. It is a working river that was worked very nearly to death.",
+           "The 1527 monopoly you heard about at the Stadthalle depended on the water being clean. Within three centuries the same industry had made it filthy. Bleaching gave way to dyeing, dyeing to chemistry, and by the nineteenth century the river below these girders ran whatever colour the mills were using that day. It carried the sewage of one of the most densely built valleys in Europe on top of that. The stretch through Wuppertal was for a long time among the most polluted rivers in Germany.",
+           "It is now, by the standards of its own history, in decent health \u2014 the result of decades of unglamorous sewage treatment and industrial decline in roughly equal measure. Fish are back in it. When you look down, you are looking at a recovery that took longer than the pollution did."]
+      },
+      { h:"Two towns that did not like each other",
+        p:["Somewhere along this stretch you cross what used to be a border. Elberfeld and Barmen were separate, self-governing, mutually competitive cities. They shared a yarn monopoly from 1527, a valley, and very little else willingly. Elberfeld was the older town in the legal sense and the one with the banks; Barmen had the earlier documentary record as a settlement and the harder industrial edge.",
+           "The Schwebebahn was built by both of them together, and that cooperation was itself remarkable: two councils, one contract, signed on the last day of 1894. The railway was finished long before the cities were joined. Barmen, Elberfeld, Vohwinkel, Ronsdorf, Cronenberg and Beyenburg were merged into a single city only in <b>1929</b>, under the flat name Barmen-Elberfeld, and it was renamed <b>Wuppertal</b> \u2014 valley of the Wupper \u2014 in <b>1930</b>.",
+           "So the line is older than the city it serves by 28 years. Wuppertalers will tell you this, usually with some satisfaction."]
+      }
+    ],
+    look:[
+      "The colour and clarity of the water directly below the girders.",
+      "The station structure: period pattern again, like Landgericht \u2014 and this one was rebuilt around 2011\u201312.",
+      "The backs of the buildings along the banks. Factories and warehouses were built to face the river because the river was the machine; now they present their service sides to the best view in town."
+    ],
+    sources:[
+      {t:"Wuppertal Schwebebahn (Wikipedia)", url:"https://en.wikipedia.org/wiki/Wuppertal_Schwebebahn"},
+      {t:"City of Wuppertal chronicle", url:"https://www.wuppertal.de/kultur-bildung/stadtarchiv/stadtchronik/600_stadtarchiv_chronik_Wuppertal.php"},
+      {t:"History of Elberfeld (City of Wuppertal)", url:"https://www.wuppertal.de/microsite/unser-elberfeld/archaeologie/geschichte-elberfelds/index.php"}
+    ]
+  },
+
+  /* ---- 9 ---- */
+  {
+    name:"Loher Br\u00fccke and the Junior Uni",
+    era:"Founded 2008",
+    walk:"1 stop \u00b7 2 min",
+    lat:51.26728, lon:7.18119,
+    walk_note:"One stop east. Come down and turn towards Am Br\u00f6gel; the Junior Uni building is about a hundred metres away, right by the water. There is river access and a small park here \u2014 the best place on the route to sit down.",
+    blocks:[
+      { p:["Not every stop on a tour has to be old. This one is here because it is the most convincing thing modern Wuppertal has built, and because it is a direct answer to the question the rest of the tour raises: what does a post-industrial textile city do next?",
+           "The <b>Junior Uni</b> opened in <b>2008</b> as a university for children and young people \u2014 roughly ages four to twenty \u2014 teaching science, technology and engineering in small hands-on courses taught largely by students and researchers. It is privately funded, it is heavily oversubscribed, and it has been copied elsewhere. Courses cost a token amount. Children apply for places and are allocated them, and Wuppertal parents will talk about it the way parents elsewhere talk about school catchments.",
+           "It matters in context. This valley made its fortune out of a workforce that was not educated, in an industry that no longer exists here. Up to eighty per cent of the population once lived off weaving. Barmen and Elberfeld also produced two of the more consequential arguments about industrial society \u2014 the Elberfeld welfare system you heard about at the Neumarkt, and the young man whose family house is two stops from here. An institution that teaches nine-year-olds to solder is, in a modest way, the same city still working on the same problem."]
+      },
+      { h:"A place to stop",
+        p:["If you want a break, take it here. The riverside path and the green space beside the station are the pleasantest ground on the route, and there is a caf\u00e9 inside the Junior Uni that is famously cheap.",
+           "You are also at a useful decision point. From here it is four more stops and about an hour and a quarter to the end of the tour at Werther Br\u00fccke. If you are running short of time, the two stops after this one \u2014 Engels and the opera house \u2014 are the ones to keep, and Barmen's centre can wait for another day."]
+      }
+    ],
+    look:[
+      "Get down to the water: from the bank you can watch the trains pass overhead, which is a much better view of the Schwebebahn than you get from inside one.",
+      "The park and the bridge that gives the station its name.",
+      "Looking east: the roofline of the opera house comes into view before the next stop."
+    ],
+    practical:"The Junior Uni is a working educational institution, not a visitor attraction \u2014 you can look at the building and use the caf\u00e9, but the teaching spaces are for enrolled children. Roughly 08:30 to 18:00 on weekdays, mornings on Saturdays, closed Sundays.",
+    sources:[
+      {t:"Wuppertaler Junior Uni", url:"https://www.junioruni-wuppertal.de/"},
+      {t:"Textile industry in Wuppertal", url:"https://www.baenderei-kafka.de/no_cache/206/textilindustrie-in-wuppertal.html"}
+    ]
+  },
+
+  /* ---- 10 ---- */
+  {
+    name:"Engels-Haus",
+    era:"House of 1775, museum today",
+    walk:"1 stop, then 250 m \u00b7 5 min",
+    lat:51.26636, lon:7.19067,
+    walk_note:"One stop east to <b>Adlerbr\u00fccke</b>, then walk south-west along Engelsstra\u00dfe. Check the pedestrian crossing lights on the way \u2014 see the first item under Look for.",
+    blocks:[
+      { h:"The house that is not the birthplace",
+        p:["<b>Friedrich Engels was born in Barmen on 28 November 1820</b>, into a wealthy Protestant textile family that owned five houses in this quarter, then called the Unterbarmer Bruch. The family had laid out a factory colony on the English model \u2014 a semicircle of housing around a square, with the mill and a school the Engelses had endowed. By the mid-1820s several hundred skilled workers and their families lived here.",
+           "The handsome slate-hung house in front of you, built in <b>1775</b>, was his grandfather's. Engels grew up around it and spent a great deal of time in it. It is not where he was born.",
+           "His actual birth and family home stood about a hundred metres east and was destroyed in the bombing of Barmen in 1943. It was never rebuilt."]
+      },
+      { legend:"Two things are worth un-learning here. The building signed <i>Engels-Haus</i> is routinely described, in guidebooks and on the internet, as Engels' birthplace. It is not \u2014 it was his grandfather's house, though his father was born in it in 1796. And the memorial stone placed in the Engelsgarten in the 1950s to mark where the birth house stood is in the wrong place: a re-survey of the ground against old cadastral maps, reported in 2025, put the real site somewhere else. So the most famous house is not the birthplace and the monument to the birthplace is not on the spot."
+      },
+      { h:"The angry young man",
+        p:["Engels was pulled out of school before his final examinations despite good marks, because he was destined for the family firm, and sent at seventeen to train in commerce in Bremen and later Manchester. What he did with the family business is well known. What is less often noticed is that his first target was here.",
+           "In <b>1839</b>, aged eighteen, he published <i>Letters from the Wuppertal</i> \u2014 an attack on the town that had raised him, on the piety of its manufacturers and the condition of the people in their mills, written by someone who knew exactly whose houses he was describing. He returned from Manchester in the mid-1840s and wrote <i>The Condition of the Working Class in England</i> in Barmen. He had this valley to compare it with.",
+           "There is something bracing about the arrangement in front of you. The museum of early industrialisation and the memory of Engels sit inside the physical remains of the family enterprise he indicted. The city has not tidied that away, and the exhibition does not pretend he was only a revolutionary: it presents the manufacturer, the journalist and the theorist together."]
+      }
+    ],
+    look:[
+      "The pedestrian crossing at Adlerbr\u00fccke station: the signal shows the face of a <b>young Engels</b> instead of the standard walking figure. It is the best piece of civic humour in Wuppertal.",
+      "The nearly four-metre bronze statue in the Engelsgarten \u2014 a gift from the People's Republic of China, by the sculptor Zeng Chenggang, installed in 2010. It shows a thoughtful older Engels; the city had asked for the young radical and did not get him.",
+      "The slate cladding on the 1775 house \u2014 the standard weatherproofing of the Bergisches Land, and the regional building signature.",
+      "The weathered memorial stone of 1958, in the garden. Now known to be in the wrong spot, and left where it is."
+    ],
+    practical:"Engels-Haus and the Museum f\u00fcr Fr\u00fchindustrialisierung together form the Historisches Zentrum. Closed Mondays; roughly 09:00\u201317:00 Tuesday to Friday and 10:00\u201318:00 at weekends. Admission a few euros, children cheaper. Captions are in English as well as German.",
+    sources:[
+      {t:"Engels-Haus (Wikipedia)", url:"https://en.wikipedia.org/wiki/Engels-Haus"},
+      {t:"WZ: where Engels' birth house really stood", url:"https://www.wz.de/nrw/wuppertal/wo-friedrich-engels-geburtshaus-wirklich-stand_aid-125993481"},
+      {t:"Engels-Haus, demokratie-geschichte.de", url:"https://www.demokratie-geschichte.de/karte/6352"},
+      {t:"Engels at Literatur Rheinland", url:"https://www.literatur-rheinland.de/projekte/autorinnen-portraets/engels-friedrich"}
+    ]
+  },
+
+  /* ---- 11 ---- */
+  {
+    name:"Opernhaus and Pina Bausch",
+    era:"Built 1905, rebuilt 1956",
+    walk:"400 m \u00b7 6 min",
+    lat:51.26759, lon:7.19307,
+    optional:true,
+    walk_note:"North-east from the Engels-Haus, back past Adlerbr\u00fccke station and on along the main road. A genuine detour of about six minutes each way, and worth it: this is the most consequential building in Wuppertal after the railway itself.",
+    blocks:[
+      { h:"Barmen's own theatre",
+        p:["Barmen built this in <b>1905</b>, to designs by the Cologne architect Carl Moritz, as its municipal theatre \u2014 twenty-four years before Barmen ceased to exist as a city. The original was a confident mix of neo-baroque and Jugendstil, and it was wrecked in the air raid on the night of 30 May 1943.",
+           "What happened afterwards is the decision that explains most of Wuppertal's appearance. There was a long argument about whether to clear the ruin and start again or build on what was left. Cost settled it: they reused the shell. It reopened on <b>14 October 1956</b>, one of the first theatres rebuilt in postwar Germany, and it reopened as a 1950s building wearing a 1905 outline. A thorough restoration from 2006 to 2009 cost about <b>\u20ac23 million</b> and deliberately conserved the fifties interior rather than reaching back past it. So the outside is Edwardian, the inside is Adenauer-era, and both are listed."]
+      },
+      { h:"The company that changed dancing",
+        p:["In <b>1973</b> the theatre's director appointed a 32-year-old choreographer to run the ballet. She promptly turned it into something else and renamed it the Tanztheater Wuppertal. Audiences hated it at first \u2014 hated it loudly \u2014 and the management backed her anyway, which is the single most important administrative decision in this city's cultural history.",
+           "<b>Pina Bausch</b> led the company here until her death in 2009, and in those thirty-six years she rebuilt the vocabulary of European dance from a municipal theatre in a declining textile town. <i>Rite of Spring</i> in 1975 put the dancers on a stage covered in soil. <i>Caf\u00e9 M\u00fcller</i> in 1978 filled it with chairs and had a woman move through them with her eyes closed. Dancers came from everywhere to work here and the company toured constantly, so that for a generation of people who could not find Wuppertal on a map, Wuppertal meant this.",
+           "One correction while you are standing here: Bausch was not a Wuppertaler. She was born in <b>Solingen</b> in 1940, a couple of valleys south, and came to the city for the job. The company still performs in this building, still tours, and is now largely owned by the city. Wim Wenders shot most of his film about her here, which is why the Schwebebahn turns up in a dance documentary."]
+      }
+    ],
+    look:[
+      "The facade: read the 1905 composition, then notice how flat and plain the detailing is where it was reconstructed.",
+      "The foyer chandelier through the glass at dusk \u2014 unmistakably 1956.",
+      "The Theater am Engelsgarten, back beside the Engels-Haus: a 155-seat room where the drama company plays now that the Schauspielhaus at Kluse is shut. The city's theatre life relocated 200 metres from Engels' front door."
+    ],
+    practical:"Performances most evenings in season; the box office is at the Wuppertaler B\u00fchnen. Nothing to see inside outside performance hours, so this is an exterior stop unless you are coming back for a show. Tanztheater performances sell out early.",
+    sources:[
+      {t:"Opernhaus Wuppertal (Wikipedia)", url:"https://en.wikipedia.org/wiki/Opernhaus_Wuppertal"},
+      {t:"City of Wuppertal on the Opernhaus", url:"https://www.wuppertal.de/kultur-bildung/buehnen/opernhaus/102370100000150387.php"},
+      {t:"Tanztheater Wuppertal Pina Bausch", url:"https://en.wikipedia.org/wiki/Tanztheater_Wuppertal_Pina_Bausch"},
+      {t:"Wuppertaler B\u00fchnen history", url:"https://dewiki.de/Lexikon/Wuppertaler_B%C3%BChnen"}
+    ]
+  },
+
+  /* ---- 12 ---- */
+  {
+    name:"Alter Markt: where Tuffi jumped",
+    era:"21 July 1950, 10:30 a.m.",
+    walk:"back to Adlerbr\u00fccke, then 1 stop \u00b7 10 min",
+    lat:51.26957, lon:7.19806,
+    walk_note:"Go back to <b>Adlerbr\u00fccke</b> and take one stop east. Do not walk this one \u2014 the point is to ride it. The stretch of river you cross between Adlerbr\u00fccke and Alter Markt is where the most famous thing that ever happened on this railway happened, and it happened in the opposite direction to the way you are travelling.",
+    blocks:[
+      { h:"The elephant",
+        p:["At half past ten on the morning of <b>21 July 1950</b>, a four-year-old Indian elephant called Tuffi was walked up onto the platform here and loaded into car number 13. It was a publicity stunt for the Althoff travelling circus, and Tuffi was an experienced publicity animal: she had already ridden a tram and been out on a harbour cruise.",
+           "The problem was not the elephant. The problem was that every journalist in the region wanted to be in the same carriage, and each of them wanted the photograph. The car was jammed. Elephants cannot look behind them without turning round, and in the crush Tuffi climbed onto a seat to see what was going on at her back. The seat collapsed under her. People screamed. She went through the side of the car and fell roughly <b>ten to twelve metres</b> into the Wupper.",
+           "She survived. The water was low that summer, but she came down in mud rather than on the rocks that line most of the riverbed, and the injuries amounted to a graze. Several passengers were hurt in the panic inside the carriage. The circus director and the official who had authorised the ride were both fined. Tuffi was sold to a French circus in 1968 and died in Paris in 1989.",
+           "The story has outlived everything else about the railway. Her name is on souvenirs all over the city and it became a Rhineland dairy brand. If you say Tuffi to a Wuppertaler you will get an account of the fall as though it were family history."]
+      },
+      { legend:"The famous photograph of an elephant in mid-air above the Wupper is <b>not a photograph</b>. It is a montage, and the postcard everybody has seen is a fake. An American magazine had offered 10,000 marks for the best shot of the fall \u2014 an enormous sum in 1950 \u2014 but every photographer present was inside the carriage rather than on the bank, so nobody got one. There is no genuine image of the jump. There are real photographs of Tuffi waiting on this platform beforehand, which are somehow better."
+      },
+      { h:"The station itself",
+        p:["This station was originally called <b>Rathausbr\u00fccke</b>, after the bridge to Barmen's town hall, and the first building here was replaced in 1967. You are also now on the last part of the line to be built. The Barmen section, from Kluse out to Rittershausen \u2014 today's Oberbarmen \u2014 opened at half past nine on the morning of <b>27 June 1903</b>. The local paper noted that the signalling equipment was not quite finished and that the crowds turned up anyway, because everyone wanted to have used it on the first day."]
+      },
+      { heads:"Alter Markt is in the middle of an eighteen-month rebuild \u2014 roof, glass facade, the escalators coming out, the shop units reorganised \u2014 due to run into late 2027. Through 2026 the two platforms have been closing alternately for weeks at a time, and more closures are expected in 2027. If your platform is shut, use <b>Adlerbr\u00fccke</b> or <b>Werther Br\u00fccke</b>, or bus 608, 611 or 640."
+      }
+    ],
+    look:[
+      "Down at the river from the platform, looking back west towards Adlerbr\u00fccke: that is the water she landed in.",
+      "The construction hoardings and the hanging scaffold inside the station \u2014 you are watching the renewal programme happen.",
+      "A mural of Tuffi is painted on a building on Gr\u00f6nhoffstra\u00dfe, back west near V\u00f6lklinger Stra\u00dfe, if you want to collect it on the way home."
+    ],
+    sources:[
+      {t:"ZDF on Tuffi", url:"https://www.zdfheute.de/panorama/tuffi-elefant-wuppertaler-schwebebahn-100.html"},
+      {t:"WZ: Tuffi", url:"https://www.wz.de/tuffi-ein-kleiner-elefant-springt-in-die-herzen-der-wuppertaler_aid-30295251"},
+      {t:"Tuffi (Wikipedia)", url:"https://en.wikipedia.org/wiki/Tuffi"},
+      {t:"WZ: the last section opened in 1903", url:"https://www.wz.de/nrw/wuppertal/wuppertal-vor-120-jahren-ging-der-letzte-abschnitt-der-schwebebahn-in-betrieb_aid-92783021"}
+    ]
+  },
+
+  /* ---- 13 ---- */
+  {
+    name:"Gemarker Kirche",
+    era:"The Barmen Declaration, 1934",
+    walk:"250 m \u00b7 4 min",
+    lat:51.27128, lon:7.19772,
+    walk_note:"North from Alter Markt station into Zwinglistra\u00dfe. A plain Protestant church in a rebuilt shopping district, with a small courtyard, a caf\u00e9 and some old gravestones. It does not look like anything.",
+    blocks:[
+      { h:"What happened in this room",
+        p:["By 1934 the German Protestant church was being taken over from inside. The movement calling itself the German Christians was reshaping it to fit the new state: race as a category of faith, the nation as an object of worship, the Fuehrer principle applied to church government. Against that, confessing congregations formed across the regional churches.",
+           "From <b>29 to 31 May 1934</b>, on the invitation of the Westphalian church president Karl Koch, <b>139 delegates</b> from nearly every regional church in Germany \u2014 Lutheran, Reformed and united, traditions that were then barely on speaking terms and did not share communion \u2014 met in this building. The text they debated had been drafted a fortnight earlier in Frankfurt by three men: the Swiss Reformed professor <b>Karl Barth</b> of Bonn, and the Lutherans Hans Asmussen of Altona and Thomas Breit of Munich. Barth wrote the substance of it.",
+           "On <b>31 May 1934</b> the synod adopted the Barmen Theological Declaration: six theses, each affirming something and then explicitly rejecting its opposite. The first and governing claim is that Jesus Christ as attested in scripture is the one Word the church has to hear and obey \u2014 which, stated in Germany in 1934, was a refusal. If Christ is the one Word, then the state, the nation and the Fuehrer are not. The Declaration is the founding document of the Confessing Church, and it is still part of the confessional basis of most German Protestant churches; presbyters are sworn on it.",
+           "Barmen was picked partly for prosaic reasons \u2014 it was easy to reach by rail, which in 1934 meant the station you can see from here \u2014 and partly because the valley's Protestantism was old, conservative and devout. The Gestapo seized the special edition of the local paper that reported the synod."]
+      },
+      { h:"Two dates",
+        p:["The synod sat on the nights of 29, 30 and 31 May 1934. Nine years later, on the night of <b>29 to 30 May 1943</b>, the Royal Air Force destroyed Barmen. The coincidence of the calendar means nothing. It is still hard to stand here and not notice it.",
+           "This church came through, and so did the memory. There is a permanent exhibition on the Declaration inside, which is better than it sounds and needs more than ten minutes if you start reading. And immediately behind the church, sharing the block, is Wuppertal's synagogue and Jewish community centre \u2014 built here, deliberately, next door to the church where German Protestantism said no. After what you saw at the Alte Synagoge in Elberfeld this morning, that arrangement is worth a minute of standing still."]
+      }
+    ],
+    look:[
+      "The exhibition room inside, and the plainness of the sanctuary \u2014 Reformed churches do not decorate, which is part of why the argument here was about words.",
+      "The historic gravestones in the little courtyard by the caf\u00e9.",
+      "The synagogue and community centre on Gemarker Stra\u00dfe, round the back.",
+      "The sculpture in the Barmen pedestrian zone nearby, which commemorates the Declaration."
+    ],
+    practical:"An active parish church, generally open in the daytime with a caf\u00e9 and a fair-trade shop; the Declaration exhibition is free. Sunday mornings are for services. The synagogue is a working community centre \u2014 visits by arrangement.",
+    sources:[
+      {t:"EKD on the Barmen Declaration", url:"https://www.ekd.de/barmer-theologische-erklarung-11292.htm"},
+      {t:"Portal Rheinische Geschichte", url:"https://www.rheinische-geschichte.lvr.de/Epochen-und-Themen/Themen/barmer-theologische-erklaerung/DE-2086/lido/61d577f6c4cbd3.06832675"},
+      {t:"Deutsche Digitale Bibliothek exhibition", url:"https://ausstellungen.deutsche-digitale-bibliothek.de/jubilaeum-bekenntnis-barmen"},
+      {t:"Konrad-Adenauer-Stiftung", url:"https://www.kas.de/en/web/geschichte-der-cdu/calendar-detail/-/content/verabschiedung-der-barmer-theologischen-erklaerung"}
+    ]
+  },
+
+  /* ---- 14 ---- */
+  {
+    name:"Barmen: Rathaus, Werth and the fire",
+    era:"29\u201330 May 1943",
+    walk:"200 m \u00b7 3 min",
+    lat:51.27206, lon:7.20001,
+    walk_note:"A short walk to the town hall square and the Werth, Barmen's high street. Stand where you can see both the tower and the shopfronts.",
+    blocks:[
+      { h:"The night",
+        p:["On the evening of <b>29 May 1943</b>, 719 aircraft took off from England for Barmen. Around 475 of them reported reaching the target. They dropped some 1,700 high-explosive bombs and roughly <b>280,000 incendiaries</b> into a valley of narrow streets and old timber-framed buildings, and the fires joined up.",
+           "The dead are usually given as around <b>3,000 to 3,500</b>; sources differ, and the bodies took weeks to recover. Something like 3,900 houses were destroyed and 1,800 badly damaged. British analysis afterwards put <b>80 per cent</b> of the built-up area of Barmen as burnt out, along with five of its six largest factories and more than two hundred other industrial plants. At that point it was the heaviest loss of life in any single raid on Germany.",
+           "Elberfeld's turn came four weeks later, on the night of <b>24 to 25 June 1943</b>: 630 aircraft, more than a thousand tonnes of high explosive and a similar weight of incendiaries, and an area fire covering about twelve square kilometres. People jumped into the Wupper to get away from the heat. Counts of the dead there range from about 1,900 to over 2,500.",
+           "Across the whole war, Wuppertal was bombed 126 times, lost <b>more than 6,500</b> people to air attack, and had 38 per cent of its built-up area destroyed. By July 1943 nearly 61,000 of the city's 140,000 dwellings were gone."]
+      },
+      { h:"What they built back",
+        p:["Now look at the street. Every European city bombed flat had to make one decision, and it shows for the next century: rebuild what was there, or rebuild for the future. Wuppertal, with almost no money and an enormous amount of rubble, mostly chose the future. The street lines were largely kept; the buildings on them were not.",
+           "That is why the Werth is a pleasant, functional, unremarkable postwar shopping street with a suspended railway at one end, and why the handful of survivors on this tour \u2014 the Stadthalle, the Engels grandfather's house, the Gemarker Kirche, the three period-pattern stations \u2014 stand out so sharply. It also explains something about the city's reputation. Visitors sometimes call Wuppertal plain. What they are looking at is 1950s emergency architecture on medieval and industrial street plans, done fast, by people who had lost everything.",
+           "The square in front of the town hall carries the name of <b>Johannes Rau</b>, born in Barmen in 1931, later minister-president of North Rhine-Westphalia and then President of Germany from 1999 to 2004. He is the valley's other favourite son, and considerably more popular here than Engels."]
+      }
+    ],
+    look:[
+      "The Rathaus tower \u2014 the tallest thing on the square, and the anchor the rebuilt centre was arranged around.",
+      "Shopfront by shopfront along the Werth: guess the decade. Almost nothing predates 1950.",
+      "Barmen's market on the Marktplatz, if it is a market morning: Tuesday, Friday or Saturday.",
+      "How completely the Schwebebahn dominates the skyline in a district with no tall buildings left."
+    ],
+    sources:[
+      {t:"Air raids on Wuppertal (Wikipedia)", url:"https://de.wikipedia.org/wiki/Luftangriffe_auf_Wuppertal"},
+      {t:"WZ: the firestorm of 1943", url:"https://www.wz.de/1943-das-alte-wuppertal-stirbt-im-feuersturm_aid-30304655"},
+      {t:"Wuppertaler Rundschau: eyewitness accounts", url:"https://www.wuppertaler-rundschau.de/lokales/luftangriff-aus-jedem-fenster-feuer_aid-37191925"},
+      {t:"Zeitzeichen Wuppertal: memorial to the victims", url:"https://zeitzeichen-wuppertal.de/2011/06/ehrenmal-fur-die-opfer-der-luftangriffe_26.html"}
+    ]
+  },
+
+  /* ---- 15 ---- */
+  {
+    name:"Werther Br\u00fccke",
+    era:"The best station on the line",
+    walk:"600 m \u00b7 8 min on foot",
+    lat:51.27253, lon:7.20630,
+    walk_note:"Walk east along the Werth to the end. The tour finishes on this platform, so go up and stand in the middle of it for a couple of minutes before you leave.",
+    blocks:[
+      { h:"Where to end",
+        p:["Of the three stations rebuilt to the original pattern, this is the one that convinces. It sits directly over the Wupper at the eastern end of the Werth, and Wuppertalers will argue for it as the most beautiful of the twenty. The ironwork, the glazing and the roof geometry are the 1901 language; the lift bolted onto the outside is the twenty-first century admitting that the 1901 language did not include wheelchairs.",
+           "Stand in the middle and look both ways along the line. You have come about five kilometres east down the valley from the Stadthalle, nearer seven counting the walking. In that distance the tour has covered a yarn-bleaching monopoly of 1527, a chemistry lesson about iron in water, two rival towns that only merged in 1929, an imperial ribbon-cutting, a sugar manufacturer's monorail, the invention of a welfare system, a young man's furious pamphlet about his own family's mills, a synagogue burnt in 1938, a synod that said no in 1934, a city burnt in 1943, an elephant, and a choreographer who made a municipal ballet into a world capital of dance. All of it lined up along one river, because there was nowhere else for any of it to go."]
+      },
+      { h:"What to do next",
+        p:["<b>Two stops further east</b> takes you to Oberbarmen, the end of the line, with mainline trains back into the city. It is not scenic, but it completes the route.",
+           "<b>Or turn round and ride the whole thing west.</b> This is the recommendation. Thirty minutes to Vohwinkel gets you the ten kilometres over the river you have just been dipping in and out of, then the very different final 3.3 km where the line leaves the water and swings out over an ordinary shopping street at rooftop height, past the zoo and the stadium and across a motorway. Sit at the very front or the very back. The view down the middle of a street from inside a hanging train is the thing people remember.",
+           "A note on timing for the future: the <b>Kaiserwagen</b>, car number 5 from the imperial ride of 1900, is running again after restoration and can be chartered. And the whole line is expected to shut completely for up to fifteen months some time in the 2030s, while the original 1901 depot at Vohwinkel is finally replaced. If you have been meaning to bring someone here, the window is wide but not infinite."]
+      }
+    ],
+    look:[
+      "The riveted lattice and the curve of the platform roof \u2014 compare it with Ohligsm\u00fchle at the start of the tour, and you have the whole argument about reconstruction in two images.",
+      "The river directly beneath the platform edge.",
+      "The bogies as a train pulls in: everything that holds the car up is above your head, and there is nothing at all below it.",
+      "Barmen station a short walk away, on the mainline that got the flat ground first."
+    ],
+    practical:"Trains until about 23:00. Wuppertal-Barmen mainline station is a few minutes' walk for connections towards Hagen or back to the Hauptbahnhof.",
+    sources:[
+      {t:"baukunst-nrw: Wuppertaler Schwebebahn", url:"http://www.baukunst-nrw.de/objekte/Wuppertaler-Schwebebahn--16.htm"},
+      {t:"zfk: the Schwebebahn at 125, and the depot rebuild", url:"https://www.zfk.de/mobilitaet/schwebebahn-wuppetal-historie-betrieb"},
+      {t:"WSW: Kaiserwagen", url:"https://www.wsw-online.de/mobilitaet/schwebebahn/kaiserwagen/"}
+    ]
+  }
+
+];
+
+/* ============================================================
+   APP
+   ============================================================ */
+(function(){
+  "use strict";
+
+  var map, meMarker, meCircle, follow = false, watchId = null;
+  var markers = [], current = 0, routeLine = null;
+  var visited = loadVisited();
+
+  /* ---------- map ---------- */
+  function initMap(){
+    var pts = STOPS.map(function(s){ return [s.lat, s.lon]; });
+    map = L.map('map', {
+      zoomControl:false,
+      attributionControl:true,
+      tap:true
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19, minZoom:13,
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    routeLine = L.polyline(pts.filter(function(_,i){ return !STOPS[i].optional; }), {
+      color:'#d8a13a', weight:4, opacity:.65, dashArray:'1 9', lineCap:'round'
+    }).addTo(map);
+
+    STOPS.forEach(function(s, i){
+      var cls = 'pin' + (s.optional ? ' optional' : '') + (visited[i] ? ' done' : '');
+      var m = L.marker([s.lat, s.lon], {
+        icon: L.divIcon({ className:'', html:'<div class="'+cls+'">'+(i+1)+'</div>', iconSize:[30,30], iconAnchor:[15,15] }),
+        zIndexOffset: 100
+      }).addTo(map);
+      m.on('click', function(){ show(i, true); });
+      markers.push(m);
+    });
+
+    map.fitBounds(routeLine.getBounds(), { paddingTopLeft:[30,90], paddingBottomRight:[30, window.innerWidth<820 ? 150 : 30] });
+  }
+
+  /* ---------- rendering ---------- */
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+  function show(i, recenter){
+    if(i < 0 || i >= STOPS.length) return;
+    current = i;
+    var s = STOPS[i];
+
+    document.getElementById('sheetnum').textContent = (i+1);
+    document.getElementById('sheettitle').textContent = s.name;
+
+    var sub = [];
+    if(s.era) sub.push(esc(s.era));
+    if(s.walk) sub.push(esc(s.walk));
+    if(s.optional) sub.push('optional');
+    document.getElementById('sheetsub').innerHTML = sub.join('<span class="sep">•</span>');
+
+    document.getElementById('body').innerHTML = buildBody(s);
+    document.getElementById('body').scrollTop = 0;
+
+    document.getElementById('btnPrev').disabled = (i === 0);
+    document.getElementById('btnNext').disabled = (i === STOPS.length - 1);
+    markVisitedBtn();
+
+    markers.forEach(function(m, j){
+      var el = m.getElement() && m.getElement().querySelector('.pin');
+      if(!el) return;
+      el.classList.toggle('active', j === i);
+      el.classList.toggle('done', !!visited[j] && j !== i);
+    });
+
+    stopSpeech();
+    openSheet();
+    if(recenter !== false){
+      var off = window.innerWidth < 820 ? 0.0011 : 0;
+      map.panTo([s.lat - off, s.lon], { animate:true, duration:.5 });
+      if(map.getZoom() < 16) map.setZoom(16);
+    }
+    document.getElementById('title').innerHTML = '<b>'+(i+1)+'.</b> ' + esc(s.name);
+  }
+
+  function buildBody(s){
+    var h = '';
+    if(s.walk_note) h += box('walk','Getting there', s.walk_note);
+    (s.blocks || []).forEach(function(b){
+      if(b.h) h += '<h4>'+esc(b.h)+'</h4>';
+      if(b.p) b.p.forEach(function(p){ h += '<p>'+p+'</p>'; });
+      if(b.list) h += '<ul>' + b.list.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+      if(b.legend) h += box('legend','Legend, not fact', b.legend);
+      if(b.heads) h += box('heads','Heads up in 2026', b.heads);
+    });
+    if(s.look && s.look.length){
+      h += '<h4>Look for</h4><ul>' + s.look.map(function(x){ return '<li>'+x+'</li>'; }).join('') + '</ul>';
+    }
+    if(s.practical) h += box('walk','Practical', s.practical);
+    if(s.sources && s.sources.length){
+      h += '<div class="srcs">Sources: ' + s.sources.map(function(u){
+        return '<a href="'+u.url+'" target="_blank" rel="noopener">'+esc(u.t)+'</a>';
+      }).join(' · ') + '</div>';
+    }
+    return h;
+  }
+  function box(cls, label, html){
+    return '<div class="box '+cls+'"><span class="lbl">'+label+'</span>'+html+'</div>';
+  }
+
+  /* ---------- speech ---------- */
+  var synth = window.speechSynthesis, queue = [], speaking = false;
+
+  function plainText(s){
+    var parts = [s.name + '.'];
+    (s.blocks || []).forEach(function(b){
+      if(b.h) parts.push(b.h + '.');
+      if(b.p) b.p.forEach(function(p){ parts.push(strip(p)); });
+      if(b.list) b.list.forEach(function(x){ parts.push(strip(x)); });
+      if(b.legend) parts.push('Legend, not fact. ' + strip(b.legend));
+      if(b.heads) parts.push('Heads up. ' + strip(b.heads));
+    });
+    if(s.look && s.look.length){
+      parts.push('Things to look for.');
+      s.look.forEach(function(x){ parts.push(strip(x)); });
+    }
+    return parts;
+  }
+  function strip(html){
+    var d = document.createElement('div');
+    d.innerHTML = html;
+    return (d.textContent || '').replace(/\s+/g,' ').trim();
+  }
+  function chunk(text){
+    // keep utterances short: some mobile engines truncate long strings
+    var out = [], sentences = text.match(/[^.!?]+[.!?]*/g) || [text], buf = '';
+    sentences.forEach(function(sn){
+      if((buf + sn).length > 220){ if(buf) out.push(buf.trim()); buf = sn; }
+      else buf += sn;
+    });
+    if(buf.trim()) out.push(buf.trim());
+    return out;
+  }
+  function pickVoice(){
+    var vs = synth.getVoices() || [];
+    var pref = ['Google UK English Female','Daniel','Serena','Google US English','Samantha','Karen'];
+    for(var i=0;i<pref.length;i++){
+      var v = vs.find(function(x){ return x.name === pref[i]; });
+      if(v) return v;
+    }
+    return vs.find(function(v){ return /^en[-_]GB/i.test(v.lang); })
+        || vs.find(function(v){ return /^en/i.test(v.lang); })
+        || null;
+  }
+  function speak(){
+    if(!('speechSynthesis' in window)){ toast('This browser has no built-in speech.'); return; }
+    if(speaking){ stopSpeech(); return; }
+    var text = plainText(STOPS[current]).join(' ');
+    queue = chunk(text);
+    if(!queue.length) return;
+    speaking = true;
+    setSpeakBtn(true);
+    var voice = pickVoice();
+    queue.forEach(function(t, idx){
+      var u = new SpeechSynthesisUtterance(t);
+      u.lang = voice ? voice.lang : 'en-GB';
+      if(voice) u.voice = voice;
+      u.rate = 0.97; u.pitch = 1.0;
+      if(idx === queue.length - 1) u.onend = function(){ speaking = false; setSpeakBtn(false); };
+      u.onerror = function(){ speaking = false; setSpeakBtn(false); };
+      synth.speak(u);
+    });
+  }
+  function stopSpeech(){
+    if('speechSynthesis' in window) synth.cancel();
+    speaking = false; setSpeakBtn(false);
+  }
+  function setSpeakBtn(on){
+    var b = document.getElementById('btnSpeak');
+    b.textContent = on ? '■ Stop' : '▶ Listen';
+    b.classList.toggle('primary', !on);
+  }
+  if('speechSynthesis' in window) synth.onvoiceschanged = function(){};
+
+  /* ---------- geolocation ---------- */
+  function toggleLocate(){
+    if(watchId !== null){
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null; follow = false;
+      if(meMarker){ map.removeLayer(meMarker); meMarker = null; }
+      if(meCircle){ map.removeLayer(meCircle); meCircle = null; }
+      document.getElementById('btnLocate').classList.remove('on');
+      return;
+    }
+    if(!navigator.geolocation){ toast('This browser has no location support.'); return; }
+    if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+      toast('Location needs an https:// address — see the note in the README.');
+    }
+    document.getElementById('btnLocate').classList.add('on');
+    follow = true;
+    watchId = navigator.geolocation.watchPosition(onPos, onPosErr, {
+      enableHighAccuracy:true, maximumAge:5000, timeout:20000
+    });
+  }
+  function onPos(pos){
+    var ll = [pos.coords.latitude, pos.coords.longitude];
+    var acc = pos.coords.accuracy || 30;
+    if(!meMarker){
+      meMarker = L.marker(ll, {
+        icon: L.divIcon({ className:'', html:'<div style="position:relative"><div class="mepulse"></div><div class="medot"></div></div>', iconSize:[16,16], iconAnchor:[8,8] }),
+        zIndexOffset:1000, interactive:false
+      }).addTo(map);
+      meCircle = L.circle(ll, { radius:acc, color:'#3d8bfd', weight:1, opacity:.4, fillColor:'#3d8bfd', fillOpacity:.09, interactive:false }).addTo(map);
+      map.setView(ll, Math.max(map.getZoom(), 17));
+      toast('Found you. The blue dot follows as you walk.');
+      nearestHint(ll);
+    } else {
+      meMarker.setLatLng(ll);
+      meCircle.setLatLng(ll).setRadius(acc);
+      if(follow) map.panTo(ll, { animate:true, duration:.6 });
+    }
+  }
+  function onPosErr(e){
+    document.getElementById('btnLocate').classList.remove('on');
+    watchId = null; follow = false;
+    var msg = 'Could not get your location.';
+    if(e && e.code === 1) msg = 'Location permission denied. Allow it in your browser settings.';
+    else if(e && e.code === 2) msg = 'Location unavailable — try again outdoors.';
+    else if(e && e.code === 3) msg = 'Location timed out. Try again.';
+    toast(msg);
+  }
+  function nearestHint(ll){
+    var best = -1, bd = 1e9;
+    STOPS.forEach(function(s,i){
+      var d = dist(ll[0], ll[1], s.lat, s.lon);
+      if(d < bd){ bd = d; best = i; }
+    });
+    if(best >= 0 && bd < 900) toast('Nearest stop: ' + (best+1) + '. ' + STOPS[best].name + ' — about ' + Math.round(bd) + ' m away.');
+  }
+  function dist(a1,o1,a2,o2){
+    var R=6371000, p=Math.PI/180;
+    var dA=(a2-a1)*p, dO=(o2-o1)*p;
+    var x=Math.sin(dA/2)*Math.sin(dA/2)+Math.cos(a1*p)*Math.cos(a2*p)*Math.sin(dO/2)*Math.sin(dO/2);
+    return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  }
+  // stop auto-following if the user drags the map
+  function bindDragBreak(){ map.on('dragstart', function(){ follow = false; }); }
+
+  /* ---------- visited ---------- */
+  function loadVisited(){
+    try { return JSON.parse(localStorage.getItem(TOUR.storageKey + '-visited') || '{}'); }
+    catch(e){ return {}; }
+  }
+  function saveVisited(){
+    try { localStorage.setItem(TOUR.storageKey + '-visited', JSON.stringify(visited)); } catch(e){}
+  }
+  function toggleVisited(){
+    visited[current] = !visited[current];
+    if(!visited[current]) delete visited[current];
+    saveVisited(); markVisitedBtn(); renderList();
+  }
+  function markVisitedBtn(){
+    var b = document.getElementById('btnDone');
+    b.textContent = visited[current] ? '✓ Visited' : 'Mark visited';
+    b.classList.toggle('primary', !!visited[current]);
+  }
+
+  /* ---------- stop list ---------- */
+  function renderList(){
+    var wrap = document.getElementById('listitems');
+    wrap.innerHTML = STOPS.map(function(s,i){
+      return '<div class="li'+(visited[i]?' done':'')+(s.optional?' opt':'')+'" data-i="'+i+'">' +
+             '<div class="n">'+(i+1)+'</div>' +
+             '<div class="t"><b>'+esc(s.name)+'</b><span>'+esc([s.era, s.walk].filter(Boolean).join(' · '))+'</span></div>' +
+             '</div>';
+    }).join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.li'), function(el){
+      el.addEventListener('click', function(){
+        closeList(); show(parseInt(el.dataset.i,10), true);
+      });
+    });
+    var n = Object.keys(visited).filter(function(k){ return visited[k]; }).length;
+    document.getElementById('listmeta').textContent =
+      STOPS.length + ' stops · about ' + totalKm() + ' km · ' + n + ' marked visited';
+  }
+  function totalKm(){
+    var main = STOPS.filter(function(s){ return !s.optional; }), t = 0;
+    for(var i=1;i<main.length;i++) t += dist(main[i-1].lat, main[i-1].lon, main[i].lat, main[i].lon);
+    return (t * 1.02 / 1000).toFixed(1);   // route follows the rail line, mostly ridden
+  }
+  function openList(){ renderList(); document.getElementById('list').classList.add('show'); }
+  function closeList(){ document.getElementById('list').classList.remove('show'); }
+
+  /* ---------- sheet ---------- */
+  var sheet = document.getElementById('sheet');
+  function openSheet(){ sheet.classList.add('open'); sheet.classList.remove('hidden'); }
+  function peekSheet(){ sheet.classList.remove('open'); sheet.classList.remove('hidden'); }
+  function toggleSheet(){ sheet.classList.toggle('open'); }
+
+  function bindSheetDrag(){
+    var startY = null, startOpen = false;
+    function down(e){
+      startY = (e.touches ? e.touches[0].clientY : e.clientY);
+      startOpen = sheet.classList.contains('open');
+    }
+    function up(e){
+      if(startY === null) return;
+      var endY = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY);
+      var dy = endY - startY;
+      if(Math.abs(dy) < 24){ toggleSheet(); }
+      else if(dy > 0 && startOpen){ peekSheet(); }
+      else if(dy < 0 && !startOpen){ openSheet(); }
+      startY = null;
+    }
+    ['touchstart','mousedown'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, down, {passive:true}); });
+    ['touchend','mouseup'].forEach(function(ev){ document.getElementById('grab').addEventListener(ev, up); });
+    document.getElementById('sheethead').addEventListener('click', function(){ toggleSheet(); });
+  }
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 4200);
+  }
+
+  /* ---------- boot ---------- */
+  function boot(){
+    if(!STOPS.length){ document.body.innerHTML = '<p style="padding:40px;font:16px sans-serif;color:#eee">No stop data loaded.</p>'; return; }
+    document.title = TOUR.title;
+    document.getElementById('iTitle').textContent = TOUR.title;
+    document.getElementById('iKicker').textContent = TOUR.kicker;
+    document.getElementById('iBlurb').textContent = TOUR.blurb;
+    document.getElementById('sHrs').textContent = TOUR.hours;
+    document.getElementById('title').innerHTML = '<b>' + esc(TOUR.city) + '</b> ' + esc(TOUR.subtitle);
+    if(TOUR.tip){
+      var tipEl = document.getElementById('iTip');
+      tipEl.innerHTML = TOUR.tip; tipEl.style.display = '';
+    }
+    document.getElementById('sN').textContent = STOPS.filter(function(s){return !s.optional;}).length;
+    initMap();
+    bindDragBreak();
+    bindSheetDrag();
+    document.getElementById('sKm').textContent = totalKm();
+
+    document.getElementById('btnStart').addEventListener('click', function(){
+      document.getElementById('intro').classList.add('hide');
+      show(0, true);
+      // prime the speech engine on a user gesture (required by iOS)
+      if('speechSynthesis' in window){
+        try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch(e){}
+      }
+    });
+    document.getElementById('btnList').addEventListener('click', openList);
+    document.getElementById('btnCloseList').addEventListener('click', closeList);
+    document.getElementById('btnLocate').addEventListener('click', toggleLocate);
+    document.getElementById('btnSpeak').addEventListener('click', speak);
+    document.getElementById('btnPrev').addEventListener('click', function(){ show(current-1, true); });
+    document.getElementById('btnNext').addEventListener('click', function(){ show(current+1, true); });
+    document.getElementById('btnDone').addEventListener('click', toggleVisited);
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'ArrowRight') show(current+1, true);
+      if(e.key === 'ArrowLeft') show(current-1, true);
+      if(e.key === 'Escape'){ closeList(); stopSpeech(); }
+    });
+    window.addEventListener('pagehide', stopSpeech);
+
+    show(0, false);
+    peekSheet();
+    renderList();
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
